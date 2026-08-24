@@ -15,6 +15,9 @@ async function main() {
     return;
   }
 
+
+
+  
   console.log(`Current meter type: ${meter.meterType}`);
   
   if (meter.meterType === 'PIPING') {
