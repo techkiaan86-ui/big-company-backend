@@ -72,10 +72,10 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
 
     let salesRevenue = 0;
     for (const sale of sales) {
-        if (sale.retailerId) {
-            const settleDate = retailerMap.get(sale.retailerId);
-            if (settleDate && sale.createdAt < settleDate) continue;
-        }
+        if (!sale.retailerId) continue;
+        const settleDate = retailerMap.get(sale.retailerId);
+        if (settleDate && sale.createdAt < settleDate) continue;
+        
         for (const item of sale.saleItems) {
             salesRevenue += item.price * item.quantity;
         }
@@ -84,10 +84,10 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
     let wholesaleRevenue = 0;
     for (const order of wholesaleOrders) {
       if (order.status === 'delivered') {
-        if (order.wholesalerId) {
-            const settleDate = wholesalerMap.get(order.wholesalerId);
-            if (settleDate && order.createdAt < settleDate) continue;
-        }
+        if (!order.wholesalerId) continue;
+        const settleDate = wholesalerMap.get(order.wholesalerId);
+        if (settleDate && order.createdAt < settleDate) continue;
+        
         wholesaleRevenue += order.totalAmount;
       }
     }
@@ -355,6 +355,7 @@ export const getReports = async (req: AuthRequest, res: Response) => {
 
     let salesRevenue = 0;
     for (const sale of sales) {
+        if (!sale.retailerId) continue;
         for (const item of sale.saleItems) {
             salesRevenue += item.price * item.quantity;
         }
