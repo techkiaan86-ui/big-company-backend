@@ -74,11 +74,7 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
     let salesRevenue = 0;
     for (const sale of sales) {
       if (sale.status === 'completed' || sale.status === 'delivered') {
-        if (sale.saleItems && sale.saleItems.length > 0) {
-          salesRevenue += sale.saleItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
-        } else {
-          salesRevenue += sale.totalAmount;
-        }
+        salesRevenue += sale.totalAmount || 0;
       }
     }
 
