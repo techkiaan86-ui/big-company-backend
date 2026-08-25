@@ -83,7 +83,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
 
     log('Checking for mobile money payment...');
     let externalRef = null;
-    if (paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'airtel' || paymentMethod === 'airtel' || paymentMethod === 'airtel') {
+    if (paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'mtn' || paymentMethod === 'airtel' || paymentMethod === 'airtel' || paymentMethod === 'airtel') {
       log('Mobile money detected, importing palmKash service...');
       const palmKash = (await import('../services/palmKash.service')).default;
       log('PalmKash service imported');
@@ -366,7 +366,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         }
       }
 
-      const isMobileMoney = paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'airtel';
+      const isMobileMoney = paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'mtn' || paymentMethod === 'airtel';
 
       if (!isMobileMoney && !isUssdCallback) {
         console.log('Decrementing stock...');
@@ -1334,7 +1334,7 @@ export const repayLoan = async (req: AuthRequest, res: Response) => {
     // ==========================================
     // PALMKASH INTEGRATION
     // ==========================================
-    const isMobileMoney = payment_method === 'mobile_money' || payment_method === 'momo' || payment_method === 'airtel';
+    const isMobileMoney = payment_method === 'mobile_money' || payment_method === 'momo' || payment_method === 'mtn' || payment_method === 'airtel';
     if (isMobileMoney) {
       const creditWallet = await prisma.wallet.findFirst({
         where: { consumerId: consumerProfile.id, type: 'credit_wallet' }

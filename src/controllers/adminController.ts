@@ -3294,7 +3294,7 @@ export const getRetailerAccountDetails = async (req: AuthRequest, res: Response)
       ).reduce((sum, s) => sum + s.totalAmount, 0),
       dashboardWalletRevenue: filteredCustomerRevenueSales.filter(s => s.paymentMethod === 'dashboard_wallet' || s.paymentMethod === 'wallet').reduce((sum, s) => sum + s.totalAmount, 0),
       creditWalletRevenue: filteredCustomerRevenueSales.filter(s => s.paymentMethod === 'credit_wallet' || s.paymentMethod === 'credit').reduce((sum, s) => sum + s.totalAmount, 0),
-      mobileMoneyRevenue: filteredCustomerRevenueSales.filter(s => s.paymentMethod === 'mobile_money' || s.paymentMethod === 'ussd_callback').reduce((sum, s) => sum + s.totalAmount, 0),
+      mobileMoneyRevenue: filteredCustomerRevenueSales.filter(s => s.paymentMethod === 'mobile_money' || s.paymentMethod === 'momo' || s.paymentMethod === 'mtn' || s.paymentMethod === 'airtel' || s.paymentMethod === 'ussd_callback').reduce((sum, s) => sum + s.totalAmount, 0),
       gasRewardsM3,
       gasRewardsRwf,
     };

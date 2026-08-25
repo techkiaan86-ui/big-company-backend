@@ -1085,7 +1085,7 @@ export const createSale = async (req: AuthRequest, res: Response) => {
 
       // --- Handle PalmKash (Mobile Money) ---
       let externalRef = null;
-      if (payment_method === 'mobile_money' || payment_method === 'momo' || payment_method === 'airtel' || payment_method === 'airtel' || payment_method === 'airtel') {
+      if (payment_method === 'mobile_money' || payment_method === 'momo' || payment_method === 'mtn' || payment_method === 'airtel' || payment_method === 'airtel' || payment_method === 'airtel') {
         if (!customer_phone) throw new Error('Customer phone required for mobile money payment');
 
         const palmKash = (await import('../services/palmKash.service')).default;
@@ -1111,7 +1111,7 @@ export const createSale = async (req: AuthRequest, res: Response) => {
       }
 
       // Create Sale Record
-      const isMobileMoney = payment_method === 'mobile_money' || payment_method === 'momo' || payment_method === 'airtel';
+      const isMobileMoney = payment_method === 'mobile_money' || payment_method === 'momo' || payment_method === 'mtn' || payment_method === 'airtel';
       const sale = await prisma.sale.create({
         data: {
           retailerId: retailerProfile.id,
@@ -1760,7 +1760,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
           });
           remaining -= deduct;
         }
-      } else if (paymentMethod === 'momo') {
+      } else if (paymentMethod === 'momo' || paymentMethod === 'mtn' || paymentMethod === 'airtel') {
         // ==========================================
         // PALMKASH INTEGRATION
         // ==========================================
@@ -1788,7 +1788,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
           wholesalerId: wholesalerId,
           totalAmount: totalAmount,
           paymentMethod: paymentMethod,
-          status: paymentMethod === 'momo' ? 'pending_payment' : 'pending',
+          status: (paymentMethod === 'momo' || paymentMethod === 'mtn' || paymentMethod === 'airtel') ? 'pending_payment' : 'pending',
           notes: externalRef,
           orderItems: {
             create: items.map((item: any) => ({
@@ -2238,7 +2238,7 @@ export const makeRepayment = async (req: AuthRequest, res: Response) => {
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
     // 2. PalmKash Integration for MoMo — create PENDING record and wait for webhook
-    const isMobileMoney = paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'airtel';
+    const isMobileMoney = paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'mtn' || paymentMethod === 'airtel';
     if (isMobileMoney) {
       // Use RREPAY-{orderId}-{timestamp} so webhook can extract the orderId
       const transactionRef = `RREPAY-${order.id}-${Date.now()}`;
@@ -2339,7 +2339,7 @@ export const payCredit = async (req: AuthRequest, res: Response) => {
     }
 
     // 1. PalmKash Integration for MoMo
-    const isMobileMoney = paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'airtel';
+    const isMobileMoney = paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'mtn' || paymentMethod === 'airtel';
     if (isMobileMoney) {
       const transactionRef = `GCREPAY-${Date.now()}`;
       const palmKash = (await import('../services/palmKash.service')).default;
@@ -4080,7 +4080,7 @@ export const payRetailerLoan = async (req: AuthRequest, res: Response) => {
     const repaymentAmount = Math.min(amount, loan.remainingAmount);
 
     // 1. PalmKash Integration for MoMo — create PENDING record and wait for webhook
-    if (paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'airtel') {
+    if (paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'mtn' || paymentMethod === 'airtel') {
       // Use RLREPAY-{loanId}-{timestamp} so webhook can extract the loanId
       const transactionRef = `RLREPAY-${loanId}-${Date.now()}`;
       const palmKash = (await import('../services/palmKash.service')).default;

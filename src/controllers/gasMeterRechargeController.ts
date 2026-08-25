@@ -236,7 +236,7 @@ export const initiateGasMeterRecharge = async (req: AuthRequest, res: Response) 
                     },
                 });
             }
-        } else if (paymentMethod === 'mobile_money') {
+        } else if (paymentMethod === 'mobile_money' || paymentMethod === 'mtn' || paymentMethod === 'momo' || paymentMethod === 'airtel') {
             const palmKash = (await import('../services/palmKash.service')).default;
             const pmResult = await palmKash.initiatePayment({
                 amount: totalMoneyAmount,
@@ -266,8 +266,8 @@ export const initiateGasMeterRecharge = async (req: AuthRequest, res: Response) 
                 amount: totalMoneyAmount,
                 isVendByUnit: !!isVendByUnit,
                 paymentMethod: paymentMethod || 'wallet',
-                paymentPhone: (paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'airtel') ? (phone || null) : null,
-                status: paymentMethod === 'mobile_money' ? 'PENDING_PAYMENT' : 'PENDING',
+                paymentPhone: (paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'mtn' || paymentMethod === 'airtel') ? (phone || null) : null,
+                status: (paymentMethod === 'mobile_money' || paymentMethod === 'mtn' || paymentMethod === 'momo' || paymentMethod === 'airtel') ? 'PENDING_PAYMENT' : 'PENDING',
                 apiReference: customerRef,
                 operatorId: userId || null, // Track who made the call
             },
@@ -277,7 +277,7 @@ export const initiateGasMeterRecharge = async (req: AuthRequest, res: Response) 
         return res.status(500).json({ success: false, error: 'Failed to log recharge transaction.' });
     }
 
-    if (paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'airtel') {
+    if (paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'mtn' || paymentMethod === 'airtel') {
         return res.json({
             success: true,
             status: 'PENDING_PAYMENT',
@@ -437,7 +437,7 @@ export const initiateGasMeterRecharge = async (req: AuthRequest, res: Response) 
                             meterId: meter.id,
                             amount: totalMoneyAmount,
                             units: unitsPurchased,
-                            status: paymentMethod === 'mobile_money' ? 'pending' : 'completed',
+                            status: (paymentMethod === 'mobile_money' || paymentMethod === 'mtn' || paymentMethod === 'momo' || paymentMethod === 'airtel') ? 'pending' : 'completed',
                             orderId: String(txRecord.id)
                         }
                     });

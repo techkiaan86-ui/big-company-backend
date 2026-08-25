@@ -339,7 +339,7 @@ export const topupGas = async (req: AuthRequest, res: Response) => {
         const gasPrice = config?.gasPricePerM3 || Number(process.env.GAS_PRICE_PER_M3) || 3250;
         const units = Number((amount / gasPrice).toFixed(4)); // Ensure clean precision
 
-        const isMobileMoney = payment_method === 'mobile_money';
+        const isMobileMoney = payment_method === 'mobile_money' || payment_method === 'mtn' || payment_method === 'momo' || payment_method === 'airtel';
 
         // For mobile_money: call PalmKash FIRST before creating any DB records
         // This way, if PalmKash fails, nothing is created in the DB (no orphans)
