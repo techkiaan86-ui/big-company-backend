@@ -67,11 +67,9 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
 
     let salesRevenue = 0;
     for (const sale of sales) {
-      if (sale.status === 'completed' || sale.status === 'delivered') {
         for (const item of sale.saleItems) {
             salesRevenue += item.price * item.quantity;
         }
-      }
     }
 
     let wholesaleRevenue = 0;
@@ -344,11 +342,9 @@ export const getReports = async (req: AuthRequest, res: Response) => {
 
     let salesRevenue = 0;
     for (const sale of sales) {
-      if (sale.status === 'completed' || sale.status === 'delivered') {
         for (const item of sale.saleItems) {
             salesRevenue += item.price * item.quantity;
         }
-      }
     }
 
     const wholesaleRevenue = wholesaleOrders.filter(o => o.status === 'delivered').reduce((acc, o) => acc + o.totalAmount, 0);
