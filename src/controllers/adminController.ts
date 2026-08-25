@@ -357,8 +357,8 @@ export const getReports = async (req: AuthRequest, res: Response) => {
       prisma.gasTopup.findMany({ where: { createdAt: { gte: startDate }, status: { in: ['completed', 'success'] } } })
     ]);
 
-    const retailers = await prisma.retailerProfile.findMany();
-    const retailerMap = new Map(retailers.map(r => [r.id, r]));
+    const allRetailers = await prisma.retailerProfile.findMany();
+    const retailerMap = new Map(allRetailers.map(r => [r.id, r]));
 
     let salesRevenue = 0;
     for (const sale of sales) {
