@@ -53,13 +53,7 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
       }),
       prisma.order.findMany({
         where: {
-          NOT: {
-            orderItems: {
-              some: {
-                product: { category: { in: ['Gas', 'gas', 'GAS'] } }
-              }
-            }
-          }
+          status: { not: 'cancelled' }
         },
         include: { wholesalerProfile: true }
       })
@@ -74,7 +68,9 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
     let salesRevenue = 0;
     for (const sale of sales) {
       if (sale.status === 'completed' || sale.status === 'delivered') {
-        salesRevenue += sale.totalAmount || 0;
+        for (const item of sale.saleItems) {
+            salesRevenue += item.price * item.quantity;
+        }
       }
     }
 
@@ -339,15 +335,22 @@ export const getReports = async (req: AuthRequest, res: Response) => {
         where: {
           createdAt: { gte: startDate },
           status: { not: 'cancelled' }
-        }
+        },
+        include: { saleItems: true }
       }),
       prisma.order.findMany({ where: { createdAt: { gte: startDate } } }),
       prisma.gasTopup.findMany({ where: { createdAt: { gte: startDate }, status: { in: ['completed', 'success'] } } })
     ]);
 
-    const salesRevenue = sales
-      .filter(s => s.status === 'completed' || s.status === 'delivered')
-      .reduce((acc, s) => acc + s.totalAmount, 0);
+    let salesRevenue = 0;
+    for (const sale of sales) {
+      if (sale.status === 'completed' || sale.status === 'delivered') {
+        for (const item of sale.saleItems) {
+            salesRevenue += item.price * item.quantity;
+        }
+      }
+    }
+
     const wholesaleRevenue = wholesaleOrders.filter(o => o.status === 'delivered').reduce((acc, o) => acc + o.totalAmount, 0);
     const totalRevenue = Math.round(salesRevenue + wholesaleRevenue);
 
