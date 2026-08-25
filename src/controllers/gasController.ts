@@ -696,12 +696,25 @@ export const getGasUsage = async (req: AuthRequest, res: Response) => {
             where: { consumerId: consumerProfile.id, orderType: 'gas' }
         });
 
+        // Fetch all GasRechargeTransactions for this customer
+        const rechargeTransactions = await prisma.gasRechargeTransaction.findMany({
+            where: { customerId: consumerProfile.id }
+        });
+
         const mappedData = topups.map(t => {
             let matchedMethod: string | null = null;
+            let realTokenValue: string | null = null;
+
+            // 0. Try matching with GasRechargeTransaction directly
+            const matchedTx = rechargeTransactions.find(tx => tx.id.toString() === t.orderId);
+            if (matchedTx) {
+                matchedMethod = matchedTx.paymentMethod;
+                realTokenValue = matchedTx.tokenValue;
+            }
 
             // 1. Try matching with Sale
             let matchedSale = sales.find(s => s.id.toString() === t.orderId);
-            if (!matchedSale) {
+            if (!matchedSale && !matchedMethod) {
                 matchedSale = sales.find(s => {
                     const amountMatches = s.totalAmount === t.amount;
                     const timeDiff = Math.abs(new Date(s.createdAt).getTime() - new Date(t.createdAt).getTime());
@@ -709,9 +722,9 @@ export const getGasUsage = async (req: AuthRequest, res: Response) => {
                 });
             }
 
-            if (matchedSale) {
+            if (matchedSale && !matchedMethod) {
                 matchedMethod = matchedSale.paymentMethod;
-            } else {
+            } else if (!matchedMethod) {
                 // 2. Try matching with CustomerOrder
                 let matchedOrder = customerOrders.find(o => o.id.toString() === t.orderId);
                 if (!matchedOrder) {
@@ -758,7 +771,7 @@ export const getGasUsage = async (req: AuthRequest, res: Response) => {
                 units: t.units,
                 currency: t.currency,
                 status: t.status,
-                token_value: t.orderId,
+                token_value: realTokenValue || t.orderId,
                 payment_method: paymentMethod,
                 created_at: t.createdAt
             };

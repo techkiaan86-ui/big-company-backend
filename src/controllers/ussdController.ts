@@ -473,6 +473,18 @@ export const handleUSSDRequestCore = async (req: Request, res: Response) => {
                     currentUnits: { increment: unitsPurchased }
                   }
                 });
+
+                // Create Sale record for revenue tracking
+                await prisma.sale.create({
+                  data: {
+                    retailerId: 1, // Default System Retailer
+                    consumerId: card.consumerId,
+                    totalAmount: selectedAmount,
+                    paymentMethod: 'wallet',
+                    status: 'completed',
+                    meterId: meter.meterNumber
+                  }
+                });
               } catch (topupErr) {
                 console.error('[USSD Recharge] Failed to create gas topup / update units:', topupErr);
               }
