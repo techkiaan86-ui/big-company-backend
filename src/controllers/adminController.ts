@@ -65,8 +65,17 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
     const orderDelivered = sales.filter(s => s.status === 'completed' || s.status === 'delivered').length + wholesaleOrders.filter(o => o.status === 'delivered').length;
     const orderCancelled = wholesaleOrders.filter(o => o.status === 'cancelled').length;
 
+    const retailers = await prisma.retailerProfile.findMany();
+    const wholesalers = await prisma.wholesalerProfile.findMany();
+    const retailerMap = new Map(retailers.map(r => [r.id, (r as any).lastSettlementDate]));
+    const wholesalerMap = new Map(wholesalers.map(w => [w.id, (w as any).lastSettlementDate]));
+
     let salesRevenue = 0;
     for (const sale of sales) {
+        if (sale.retailerId) {
+            const settleDate = retailerMap.get(sale.retailerId);
+            if (settleDate && sale.createdAt < settleDate) continue;
+        }
         for (const item of sale.saleItems) {
             salesRevenue += item.price * item.quantity;
         }
@@ -75,6 +84,10 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
     let wholesaleRevenue = 0;
     for (const order of wholesaleOrders) {
       if (order.status === 'delivered') {
+        if (order.wholesalerId) {
+            const settleDate = wholesalerMap.get(order.wholesalerId);
+            if (settleDate && order.createdAt < settleDate) continue;
+        }
         wholesaleRevenue += order.totalAmount;
       }
     }
