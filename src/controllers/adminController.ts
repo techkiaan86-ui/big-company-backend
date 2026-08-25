@@ -73,6 +73,8 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
     let salesRevenue = 0;
     for (const sale of sales) {
         if (!sale.retailerId) continue;
+        if (!retailerMap.has(sale.retailerId)) continue; // Skip if retailer was deleted
+
         const settleDate = retailerMap.get(sale.retailerId);
         if (settleDate && sale.createdAt < settleDate) continue;
         
@@ -85,6 +87,8 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
     for (const order of wholesaleOrders) {
       if (order.status === 'delivered') {
         if (!order.wholesalerId) continue;
+        if (!wholesalerMap.has(order.wholesalerId)) continue; // Skip deleted
+
         const settleDate = wholesalerMap.get(order.wholesalerId);
         if (settleDate && order.createdAt < settleDate) continue;
         
@@ -353,9 +357,13 @@ export const getReports = async (req: AuthRequest, res: Response) => {
       prisma.gasTopup.findMany({ where: { createdAt: { gte: startDate }, status: { in: ['completed', 'success'] } } })
     ]);
 
+    const retailers = await prisma.retailerProfile.findMany();
+    const retailerMap = new Map(retailers.map(r => [r.id, r]));
+
     let salesRevenue = 0;
     for (const sale of sales) {
         if (!sale.retailerId) continue;
+        if (!retailerMap.has(sale.retailerId)) continue;
         for (const item of sale.saleItems) {
             salesRevenue += item.price * item.quantity;
         }
