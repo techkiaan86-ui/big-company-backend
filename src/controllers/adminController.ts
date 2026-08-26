@@ -622,6 +622,8 @@ export const getCustomers = async (req: AuthRequest, res: Response) => {
     let totalPlatformRevenue = 0;
     for (const sale of allSales) {
       const saleRetailer = retailerMap.get(sale.retailerId);
+      if (!saleRetailer) continue; // Skip sales from deleted retailers
+
       const settlementDate = saleRetailer?.lastSettlementDate;
       if (settlementDate && new Date(sale.createdAt) < new Date(settlementDate)) {
         continue;
