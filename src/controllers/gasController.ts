@@ -670,7 +670,7 @@ export const getGasUsage = async (req: AuthRequest, res: Response) => {
             ...(lastGasResetDate ? { createdAt: { gte: lastGasResetDate } } : {})
         };
         if (meter_id) {
-            where.meterId = meter_id as string;
+            where.meterId = parseInt(meter_id as string, 10);
         }
 
         const topups = await prisma.gasTopup.findMany({
