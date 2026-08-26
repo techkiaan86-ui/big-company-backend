@@ -614,7 +614,25 @@ export const getCustomers = async (req: AuthRequest, res: Response) => {
       };
     });
 
-    res.json({ success: true, customers: formattedCustomers });
+    const allSales = await prisma.sale.findMany({
+      where: { status: { not: 'cancelled' } },
+      include: { saleItems: true }
+    });
+
+    let totalPlatformRevenue = 0;
+    for (const sale of allSales) {
+      const saleRetailer = retailerMap.get(sale.retailerId);
+      const settlementDate = saleRetailer?.lastSettlementDate;
+      if (settlementDate && new Date(sale.createdAt) < new Date(settlementDate)) {
+        continue;
+      }
+
+      for (const item of sale.saleItems || []) {
+        totalPlatformRevenue += (item.price || 0) * (item.quantity || 0);
+      }
+    }
+
+    res.json({ success: true, customers: formattedCustomers, totalPlatformRevenue });
   } catch (error: any) {
     console.error('Get Customers Error:', error);
     res.status(500).json({ success: false, error: error.message });
