@@ -37,14 +37,31 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         return res.status(404).json({ error: 'Retailer not found' });
       }
 
+      // Try to find the consumer by phone number
+      let linkedConsumerId = null;
+      const orderPhone = phone || phoneNumber || mobileNumber;
+      if (orderPhone) {
+        const matchedUser = await prisma.user.findFirst({
+          where: { phone: orderPhone }
+        });
+        if (matchedUser) {
+          const matchedConsumer = await prisma.consumerProfile.findUnique({
+            where: { userId: matchedUser.id }
+          });
+          if (matchedConsumer) {
+            linkedConsumerId = matchedConsumer.id;
+          }
+        }
+      }
+
       const sale = await prisma.sale.create({
         data: {
-          consumerId: null,
+          consumerId: linkedConsumerId,
           retailerId: Number(retailerId),
           totalAmount: 0,
           status: 'pending',
           paymentMethod: 'ussd_callback',
-          notes: JSON.stringify({ retailer_email, phone: phone || phoneNumber || mobileNumber })
+          notes: JSON.stringify({ retailer_email, phone: orderPhone })
         }
       });
 

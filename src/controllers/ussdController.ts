@@ -476,10 +476,10 @@ export const handleUSSDRequestCore = async (req: Request, res: Response) => {
 
                 // Create Sale record for revenue tracking
                 try {
-                  const consumerProfile = await prisma.consumerProfile.findUnique({
-                    where: { id: card.consumerId }
+                  const linkRequest = await prisma.customerLinkRequest.findFirst({
+                    where: { customerId: card.consumerId, status: 'approved' }
                   });
-                  const saleRetailerId = consumerProfile?.linkedRetailerId || 1;
+                  const saleRetailerId = linkRequest?.retailerId || 1;
 
                   await prisma.sale.create({
                     data: {
