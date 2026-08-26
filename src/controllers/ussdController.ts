@@ -475,16 +475,25 @@ export const handleUSSDRequestCore = async (req: Request, res: Response) => {
                 });
 
                 // Create Sale record for revenue tracking
-                await prisma.sale.create({
-                  data: {
-                    retailerId: 1, // Default System Retailer
-                    consumerId: card.consumerId,
-                    totalAmount: selectedAmount,
-                    paymentMethod: 'wallet',
-                    status: 'completed',
-                    meterId: meter.meterNumber
-                  }
-                });
+                try {
+                  const consumerProfile = await prisma.consumerProfile.findUnique({
+                    where: { id: card.consumerId }
+                  });
+                  const saleRetailerId = consumerProfile?.linkedRetailerId || 1;
+
+                  await prisma.sale.create({
+                    data: {
+                      retailerId: saleRetailerId,
+                      consumerId: card.consumerId,
+                      totalAmount: selectedAmount,
+                      paymentMethod: 'wallet',
+                      status: 'completed',
+                      meterId: meter.meterNumber
+                    }
+                  });
+                } catch (saleErr) {
+                  console.error('[USSD Recharge] Failed to create linked Sale record:', saleErr);
+                }
               } catch (topupErr: any) {
                 console.error('[USSD Recharge] Failed to create gas topup / update units:', topupErr);
                 // Rollback/Refund wallet on failure because DB failed
