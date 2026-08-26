@@ -485,8 +485,30 @@ export const handleUSSDRequestCore = async (req: Request, res: Response) => {
                     meterId: meter.meterNumber
                   }
                 });
-              } catch (topupErr) {
+              } catch (topupErr: any) {
                 console.error('[USSD Recharge] Failed to create gas topup / update units:', topupErr);
+                // Rollback/Refund wallet on failure because DB failed
+                await prisma.wallet.update({
+                  where: { id: wallet.id },
+                  data: { balance: { increment: selectedAmount } }
+                });
+                await prisma.walletTransaction.create({
+                  data: {
+                    walletId: wallet.id,
+                    type: 'refund',
+                    amount: selectedAmount,
+                    description: `Refund: DB update failed - Meter ${meterId}`,
+                    status: 'completed'
+                  }
+                });
+                await prisma.gasRechargeTransaction.update({
+                  where: { id: createdTxId },
+                  data: {
+                    status: 'FAILED',
+                    errorMessage: topupErr.message || 'Database update failed'
+                  }
+                });
+                return res.send(`END Transaction failed: Database update error.`);
               }
 
               // Send SMS notification
