@@ -59,7 +59,6 @@ const email_validator_1 = require("../utils/email-validator");
 const pricingUtils_1 = require("../utils/pricingUtils");
 // Get detailed dashboard stats.
 const getDashboard = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
     try {
         const now = new Date();
         const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -86,26 +85,17 @@ const getDashboard = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         });
         const lastProfitResetDate = profitResetAlert ? new Date(profitResetAlert.errorMessage) : null;
         // 2. Orders & Revenue (Combine B2C Sales and B2B Wholesaler Orders)
+        // Fetch ALL sales that are not cancelled (includes gas recharges logged as completed Sales by webhookController)
         const [sales, wholesaleOrders] = yield Promise.all([
             prisma_1.default.sale.findMany({
-                where: Object.assign(Object.assign({}, (lastProfitResetDate ? { createdAt: { gte: lastProfitResetDate } } : {})), { saleItems: { some: {} }, NOT: {
-                        saleItems: {
-                            some: {
-                                product: { category: { in: ['Gas', 'gas', 'GAS'] } }
-                            }
-                        }
-                    } }),
+                where: {
+                    status: { not: 'cancelled' }
+                },
                 include: { saleItems: true }
             }),
             prisma_1.default.order.findMany({
                 where: {
-                    NOT: {
-                        orderItems: {
-                            some: {
-                                product: { category: { in: ['Gas', 'gas', 'GAS'] } }
-                            }
-                        }
-                    }
+                    status: { not: 'cancelled' }
                 },
                 include: { wholesalerProfile: true }
             })
@@ -114,20 +104,35 @@ const getDashboard = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         const orderPending = sales.filter(s => s.status === 'pending').length + wholesaleOrders.filter(o => o.status === 'pending').length;
         const orderProcessing = sales.filter(s => s.status === 'processing').length + wholesaleOrders.filter(o => o.status === 'processing').length;
         const orderDelivered = sales.filter(s => s.status === 'completed' || s.status === 'delivered').length + wholesaleOrders.filter(o => o.status === 'delivered').length;
-        const orderCancelled = sales.filter(s => s.status === 'cancelled').length + wholesaleOrders.filter(o => o.status === 'cancelled').length;
+        const orderCancelled = wholesaleOrders.filter(o => o.status === 'cancelled').length;
+        const retailers = yield prisma_1.default.retailerProfile.findMany();
+        const wholesalers = yield prisma_1.default.wholesalerProfile.findMany();
+        const retailerMap = new Map(retailers.map(r => [r.id, r.lastSettlementDate]));
+        const wholesalerMap = new Map(wholesalers.map(w => [w.id, w.lastSettlementDate]));
         let salesRevenue = 0;
         for (const sale of sales) {
-            if (sale.status === 'completed' || sale.status === 'delivered') {
-                salesRevenue += sale.saleItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+            if (!sale.retailerId)
+                continue;
+            if (!retailerMap.has(sale.retailerId))
+                continue; // Skip if retailer was deleted
+            const settleDate = retailerMap.get(sale.retailerId);
+            if (settleDate && sale.createdAt < settleDate)
+                continue;
+            for (const item of sale.saleItems) {
+                salesRevenue += item.price * item.quantity;
             }
         }
         let wholesaleRevenue = 0;
         for (const order of wholesaleOrders) {
             if (order.status === 'delivered') {
-                const settlementDate = (_a = order.wholesalerProfile) === null || _a === void 0 ? void 0 : _a.lastSettlementDate;
-                if (!settlementDate || order.createdAt >= settlementDate) {
-                    wholesaleRevenue += order.totalAmount;
-                }
+                if (!order.wholesalerId)
+                    continue;
+                if (!wholesalerMap.has(order.wholesalerId))
+                    continue; // Skip deleted
+                const settleDate = wholesalerMap.get(order.wholesalerId);
+                if (settleDate && order.createdAt < settleDate)
+                    continue;
+                wholesaleRevenue += order.totalAmount;
             }
         }
         const totalRevenue = Math.round(salesRevenue + wholesaleRevenue);
@@ -346,18 +351,30 @@ const getReports = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
         else if (dateRange === 'year') {
             startDate = new Date(now.getFullYear(), 0, 1);
         }
-        // 1. Stats based on date range
+        // 1. Stats based on date range — include all sales not cancelled (gas recharges logged as completed Sales)
         const [sales, wholesaleOrders, gasTopups] = yield Promise.all([
             prisma_1.default.sale.findMany({
                 where: {
                     createdAt: { gte: startDate },
-                    saleItems: { some: {} }
-                }
+                    status: { not: 'cancelled' }
+                },
+                include: { saleItems: true }
             }),
             prisma_1.default.order.findMany({ where: { createdAt: { gte: startDate } } }),
             prisma_1.default.gasTopup.findMany({ where: { createdAt: { gte: startDate }, status: { in: ['completed', 'success'] } } })
         ]);
-        const salesRevenue = sales.filter(s => s.status === 'completed' || s.status === 'delivered').reduce((acc, s) => acc + s.totalAmount, 0);
+        const allRetailers = yield prisma_1.default.retailerProfile.findMany();
+        const retailerMap = new Map(allRetailers.map(r => [r.id, r]));
+        let salesRevenue = 0;
+        for (const sale of sales) {
+            if (!sale.retailerId)
+                continue;
+            if (!retailerMap.has(sale.retailerId))
+                continue;
+            for (const item of sale.saleItems) {
+                salesRevenue += item.price * item.quantity;
+            }
+        }
         const wholesaleRevenue = wholesaleOrders.filter(o => o.status === 'delivered').reduce((acc, o) => acc + o.totalAmount, 0);
         const totalRevenue = Math.round(salesRevenue + wholesaleRevenue);
         const orderTotal = sales.filter(s => s.status !== 'cancelled').length + wholesaleOrders.filter(o => o.status !== 'cancelled').length;
@@ -573,7 +590,24 @@ const getCustomers = (req, res) => __awaiter(void 0, void 0, void 0, function* (
                 totalSpent,
                 gasBalance });
         });
-        res.json({ success: true, customers: formattedCustomers });
+        const allSales = yield prisma_1.default.sale.findMany({
+            where: { status: { not: 'cancelled' } },
+            include: { saleItems: true }
+        });
+        let totalPlatformRevenue = 0;
+        for (const sale of allSales) {
+            const saleRetailer = retailerMap.get(sale.retailerId);
+            if (!saleRetailer)
+                continue; // Skip sales from deleted retailers
+            const settlementDate = saleRetailer === null || saleRetailer === void 0 ? void 0 : saleRetailer.lastSettlementDate;
+            if (settlementDate && new Date(sale.createdAt) < new Date(settlementDate)) {
+                continue;
+            }
+            for (const item of sale.saleItems || []) {
+                totalPlatformRevenue += (item.price || 0) * (item.quantity || 0);
+            }
+        }
+        res.json({ success: true, customers: formattedCustomers, totalPlatformRevenue });
     }
     catch (error) {
         console.error('Get Customers Error:', error);
@@ -701,7 +735,7 @@ exports.getRetailers = getRetailers;
 // Create retailer
 const createRetailer = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const { email, password, business_name, phone, address, credit_limit } = req.body;
+        const { email, password, business_name, phone, address, credit_limit, province, district, sector, cell } = req.body;
         // Check if user already exists
         const existingUser = yield prisma_1.default.user.findUnique({ where: { email } });
         if (existingUser) {
@@ -729,6 +763,10 @@ const createRetailer = (req, res) => __awaiter(void 0, void 0, void 0, function*
                 userId: user.id,
                 shopName: business_name,
                 address,
+                province,
+                district,
+                sector,
+                cell,
                 creditLimit: parseFloat(credit_limit || '0'),
                 walletBalance: 0
             }
@@ -1160,7 +1198,7 @@ exports.deleteCategory = deleteCategory;
 const updateRetailer = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params; // RetailerProfile ID
-        const { business_name, email, phone, address, credit_limit, status } = req.body;
+        const { business_name, email, phone, address, credit_limit, status, province, district, sector, cell } = req.body;
         const retailer = yield prisma_1.default.retailerProfile.findUnique({ where: { id: Number(id) } });
         if (!retailer)
             return res.status(404).json({ error: 'Retailer not found' });
@@ -1192,6 +1230,10 @@ const updateRetailer = (req, res) => __awaiter(void 0, void 0, void 0, function*
             data: {
                 shopName: business_name,
                 address,
+                province,
+                district,
+                sector,
+                cell,
                 creditLimit: credit_limit ? Number(credit_limit) : undefined,
             }
         });
@@ -2928,7 +2970,7 @@ const getRetailerAccountDetails = (req, res) => __awaiter(void 0, void 0, void 0
             totalRevenue: filteredCustomerRevenueSales.filter(s => ['dashboard_wallet', 'wallet', 'credit_wallet', 'credit', 'mobile_money', 'ussd_callback'].includes(s.paymentMethod)).reduce((sum, s) => sum + s.totalAmount, 0),
             dashboardWalletRevenue: filteredCustomerRevenueSales.filter(s => s.paymentMethod === 'dashboard_wallet' || s.paymentMethod === 'wallet').reduce((sum, s) => sum + s.totalAmount, 0),
             creditWalletRevenue: filteredCustomerRevenueSales.filter(s => s.paymentMethod === 'credit_wallet' || s.paymentMethod === 'credit').reduce((sum, s) => sum + s.totalAmount, 0),
-            mobileMoneyRevenue: filteredCustomerRevenueSales.filter(s => s.paymentMethod === 'mobile_money' || s.paymentMethod === 'ussd_callback').reduce((sum, s) => sum + s.totalAmount, 0),
+            mobileMoneyRevenue: filteredCustomerRevenueSales.filter(s => s.paymentMethod === 'mobile_money' || s.paymentMethod === 'momo' || s.paymentMethod === 'mtn' || s.paymentMethod === 'airtel' || s.paymentMethod === 'ussd_callback').reduce((sum, s) => sum + s.totalAmount, 0),
             gasRewardsM3,
             gasRewardsRwf,
         };
@@ -3958,7 +4000,7 @@ const saveEmailTemplate = (req, res) => __awaiter(void 0, void 0, void 0, functi
             'type', 'balance', 'txRef', 'orderNumber', 'quantity', 'totalAmount',
             'temp_password', 'attempt_time', 'date', 'month', 'salesCount', 'revenue',
             'newRetailers', 'newWholesalers', 'lowStockCount', 'offlineMeters', 'period',
-            'action', 'reason', 'reward_amount', 'new_reward_balance'
+            'action', 'reason', 'reward_amount', 'new_reward_balance', 'new_balance'
         ];
         // Validate variables in both subject and content
         const textToValidate = `${subject || ''} ${content || ''}`;
@@ -4087,7 +4129,7 @@ const getTemplateVariables = (req, res) => __awaiter(void 0, void 0, void 0, fun
                 'type', 'balance', 'txRef', 'orderNumber', 'quantity', 'totalAmount',
                 'temp_password', 'attempt_time', 'date', 'month', 'salesCount', 'revenue',
                 'newRetailers', 'newWholesalers', 'lowStockCount', 'offlineMeters', 'period',
-                'action', 'reason', 'reward_amount', 'new_reward_balance'
+                'action', 'reason', 'reward_amount', 'new_reward_balance', 'new_balance'
             ]
         });
     }

@@ -996,7 +996,7 @@ const createSale = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
             const targetRewardId = gasRewardWalletId || gas_meter_id;
             // --- Handle PalmKash (Mobile Money) ---
             let externalRef = null;
-            if (payment_method === 'mobile_money' || payment_method === 'momo' || payment_method === 'airtel' || payment_method === 'airtel' || payment_method === 'airtel') {
+            if (payment_method === 'mobile_money' || payment_method === 'momo' || payment_method === 'mtn' || payment_method === 'airtel' || payment_method === 'airtel' || payment_method === 'airtel') {
                 if (!customer_phone)
                     throw new Error('Customer phone required for mobile money payment');
                 const palmKash = (yield Promise.resolve().then(() => __importStar(require('../services/palmKash.service')))).default;
@@ -1020,7 +1020,7 @@ const createSale = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
                     consumerId = consumer.id;
             }
             // Create Sale Record
-            const isMobileMoney = payment_method === 'mobile_money' || payment_method === 'momo' || payment_method === 'airtel';
+            const isMobileMoney = payment_method === 'mobile_money' || payment_method === 'momo' || payment_method === 'mtn' || payment_method === 'airtel';
             const sale = yield prisma.sale.create({
                 data: {
                     retailerId: retailerProfile.id,
@@ -1612,7 +1612,7 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                     remaining -= deduct;
                 }
             }
-            else if (paymentMethod === 'momo') {
+            else if (paymentMethod === 'momo' || paymentMethod === 'mtn' || paymentMethod === 'airtel') {
                 // ==========================================
                 // PALMKASH INTEGRATION
                 // ==========================================
@@ -1639,7 +1639,7 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                     wholesalerId: wholesalerId,
                     totalAmount: totalAmount,
                     paymentMethod: paymentMethod,
-                    status: paymentMethod === 'momo' ? 'pending_payment' : 'pending',
+                    status: (paymentMethod === 'momo' || paymentMethod === 'mtn' || paymentMethod === 'airtel') ? 'pending_payment' : 'pending',
                     notes: externalRef,
                     orderItems: {
                         create: items.map((item) => ({
@@ -2054,7 +2054,7 @@ const makeRepayment = (req, res) => __awaiter(void 0, void 0, void 0, function* 
         if (!order)
             return res.status(404).json({ error: 'Order not found' });
         // 2. PalmKash Integration for MoMo — create PENDING record and wait for webhook
-        const isMobileMoney = paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'airtel';
+        const isMobileMoney = paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'mtn' || paymentMethod === 'airtel';
         if (isMobileMoney) {
             // Use RREPAY-{orderId}-{timestamp} so webhook can extract the orderId
             const transactionRef = `RREPAY-${order.id}-${Date.now()}`;
@@ -2145,7 +2145,7 @@ const payCredit = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             return res.status(400).json({ error: 'Invalid repayment amount' });
         }
         // 1. PalmKash Integration for MoMo
-        const isMobileMoney = paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'airtel';
+        const isMobileMoney = paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'mtn' || paymentMethod === 'airtel';
         if (isMobileMoney) {
             const transactionRef = `GCREPAY-${Date.now()}`;
             const palmKash = (yield Promise.resolve().then(() => __importStar(require('../services/palmKash.service')))).default;
@@ -2359,7 +2359,7 @@ const updateProfile = (req, res) => __awaiter(void 0, void 0, void 0, function* 
         }
         const { name, // User name (Contact Person)
         shop_name, company_name, // Frontend sends this
-        address, tin_number, email, phone } = req.body;
+        address, province, district, sector, cell, tin_number, email, phone } = req.body;
         // Use company_name if shop_name is not provided
         const shopNameUpdate = shop_name || company_name;
         // Update User model if needed
@@ -2372,7 +2372,7 @@ const updateProfile = (req, res) => __awaiter(void 0, void 0, void 0, function* 
         // Update RetailerProfile model
         const updatedRetailer = yield prisma_1.default.retailerProfile.update({
             where: { id: retailerProfile.id },
-            data: Object.assign(Object.assign({}, (shopNameUpdate && { shopName: shopNameUpdate })), (address && { address })
+            data: Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({}, (shopNameUpdate && { shopName: shopNameUpdate })), (address && { address })), (province && { province })), (district && { district })), (sector && { sector })), (cell && { cell })
             // tin_number is ignored as it's not in schema
             ),
             include: {
@@ -3719,7 +3719,7 @@ const payRetailerLoan = (req, res) => __awaiter(void 0, void 0, void 0, function
         }
         const repaymentAmount = Math.min(amount, loan.remainingAmount);
         // 1. PalmKash Integration for MoMo — create PENDING record and wait for webhook
-        if (paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'airtel') {
+        if (paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'mtn' || paymentMethod === 'airtel') {
             // Use RLREPAY-{loanId}-{timestamp} so webhook can extract the loanId
             const transactionRef = `RLREPAY-${loanId}-${Date.now()}`;
             const palmKash = (yield Promise.resolve().then(() => __importStar(require('../services/palmKash.service')))).default;

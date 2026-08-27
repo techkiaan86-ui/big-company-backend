@@ -278,7 +278,7 @@ const handleUSSDRequestCore = (req, res) => __awaiter(void 0, void 0, void 0, fu
                         data: {
                             customerId: meter.consumerId,
                             meterNumber: meter.meterNumber,
-                            meterType: meter.meterType || 'PIPING',
+                            meterType: meter.meterType || (meter.isGprs ? 'PIPING' : 'TOKEN'),
                             amount: selectedAmount,
                             paymentMethod: 'mobile_money',
                             paymentPhone: targetPhone,
@@ -377,6 +377,11 @@ const handleUSSDRequestCore = (req, res) => __awaiter(void 0, void 0, void 0, fu
                                 where: { id: wallet.id },
                                 data: { balance: { decrement: selectedAmount } }
                             });
+                            // Sync with ConsumerProfile walletBalance
+                            yield tx.consumerProfile.update({
+                                where: { id: card.consumerId },
+                                data: { walletBalance: { decrement: selectedAmount } }
+                            });
                             // Log Wallet transaction history
                             yield tx.walletTransaction.create({
                                 data: {
@@ -392,7 +397,7 @@ const handleUSSDRequestCore = (req, res) => __awaiter(void 0, void 0, void 0, fu
                                 data: {
                                     customerId: card.consumerId,
                                     meterNumber: meter.meterNumber,
-                                    meterType: meter.meterType || 'PIPING',
+                                    meterType: meter.meterType || (meter.isGprs ? 'PIPING' : 'TOKEN'),
                                     amount: selectedAmount,
                                     paymentMethod: 'wallet',
                                     paymentPhone: customSmsPhone,
@@ -474,9 +479,55 @@ const handleUSSDRequestCore = (req, res) => __awaiter(void 0, void 0, void 0, fu
                                         currentUnits: { increment: unitsPurchased }
                                     }
                                 });
+                                // Create Sale record for revenue tracking
+                                try {
+                                    const linkRequest = yield prisma_1.default.customerLinkRequest.findFirst({
+                                        where: { customerId: card.consumerId, status: 'approved' }
+                                    });
+                                    const saleRetailerId = (linkRequest === null || linkRequest === void 0 ? void 0 : linkRequest.retailerId) || 1;
+                                    yield prisma_1.default.sale.create({
+                                        data: {
+                                            retailerId: saleRetailerId,
+                                            consumerId: card.consumerId,
+                                            totalAmount: selectedAmount,
+                                            paymentMethod: 'wallet',
+                                            status: 'completed',
+                                            meterId: meter.meterNumber
+                                        }
+                                    });
+                                }
+                                catch (saleErr) {
+                                    console.error('[USSD Recharge] Failed to create linked Sale record:', saleErr);
+                                }
                             }
                             catch (topupErr) {
                                 console.error('[USSD Recharge] Failed to create gas topup / update units:', topupErr);
+                                // Rollback/Refund wallet on failure because DB failed
+                                yield prisma_1.default.wallet.update({
+                                    where: { id: wallet.id },
+                                    data: { balance: { increment: selectedAmount } }
+                                });
+                                yield prisma_1.default.consumerProfile.update({
+                                    where: { id: card.consumerId },
+                                    data: { walletBalance: { increment: selectedAmount } }
+                                });
+                                yield prisma_1.default.walletTransaction.create({
+                                    data: {
+                                        walletId: wallet.id,
+                                        type: 'refund',
+                                        amount: selectedAmount,
+                                        description: `Refund: DB update failed - Meter ${meterId}`,
+                                        status: 'completed'
+                                    }
+                                });
+                                yield prisma_1.default.gasRechargeTransaction.update({
+                                    where: { id: createdTxId },
+                                    data: {
+                                        status: 'FAILED',
+                                        errorMessage: topupErr.message || 'Database update failed'
+                                    }
+                                });
+                                return res.send(`END Transaction failed: Database update error.`);
                             }
                             // Send SMS notification
                             try {
@@ -515,6 +566,10 @@ const handleUSSDRequestCore = (req, res) => __awaiter(void 0, void 0, void 0, fu
                             yield prisma_1.default.wallet.update({
                                 where: { id: wallet.id },
                                 data: { balance: { increment: selectedAmount } }
+                            });
+                            yield prisma_1.default.consumerProfile.update({
+                                where: { id: card.consumerId },
+                                data: { walletBalance: { increment: selectedAmount } }
                             });
                             yield prisma_1.default.walletTransaction.create({
                                 data: {

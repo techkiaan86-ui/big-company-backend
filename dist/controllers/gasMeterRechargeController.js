@@ -205,6 +205,7 @@ const initiateGasMeterRecharge = (req, res) => __awaiter(void 0, void 0, void 0,
                     where: { id: creditWallet.id },
                     data: { balance: { decrement: totalMoneyAmount } },
                 });
+                // (Credit wallet doesn't deduct from walletBalance. walletBalance is for dashboard_wallet.)
                 yield prisma_1.default.walletTransaction.create({
                     data: {
                         walletId: creditWallet.id,
@@ -247,7 +248,7 @@ const initiateGasMeterRecharge = (req, res) => __awaiter(void 0, void 0, void 0,
                 });
             }
         }
-        else if (paymentMethod === 'mobile_money') {
+        else if (paymentMethod === 'mobile_money' || paymentMethod === 'mtn' || paymentMethod === 'momo' || paymentMethod === 'airtel') {
             const palmKash = (yield Promise.resolve().then(() => __importStar(require('../services/palmKash.service')))).default;
             const pmResult = yield palmKash.initiatePayment({
                 amount: totalMoneyAmount,
@@ -275,8 +276,8 @@ const initiateGasMeterRecharge = (req, res) => __awaiter(void 0, void 0, void 0,
                 amount: totalMoneyAmount,
                 isVendByUnit: !!isVendByUnit,
                 paymentMethod: paymentMethod || 'wallet',
-                paymentPhone: (paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'airtel') ? (phone || null) : null,
-                status: paymentMethod === 'mobile_money' ? 'PENDING_PAYMENT' : 'PENDING',
+                paymentPhone: (paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'mtn' || paymentMethod === 'airtel') ? (phone || null) : null,
+                status: (paymentMethod === 'mobile_money' || paymentMethod === 'mtn' || paymentMethod === 'momo' || paymentMethod === 'airtel') ? 'PENDING_PAYMENT' : 'PENDING',
                 apiReference: customerRef,
                 operatorId: userId || null, // Track who made the call
             },
@@ -286,7 +287,7 @@ const initiateGasMeterRecharge = (req, res) => __awaiter(void 0, void 0, void 0,
         console.error('[GasRecharge] Failed to create transaction record:', dbError.message);
         return res.status(500).json({ success: false, error: 'Failed to log recharge transaction.' });
     }
-    if (paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'airtel') {
+    if (paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'mtn' || paymentMethod === 'airtel') {
         return res.json({
             success: true,
             status: 'PENDING_PAYMENT',
@@ -437,7 +438,7 @@ const initiateGasMeterRecharge = (req, res) => __awaiter(void 0, void 0, void 0,
                             meterId: meter.id,
                             amount: totalMoneyAmount,
                             units: unitsPurchased,
-                            status: paymentMethod === 'mobile_money' ? 'pending' : 'completed',
+                            status: (paymentMethod === 'mobile_money' || paymentMethod === 'mtn' || paymentMethod === 'momo' || paymentMethod === 'airtel') ? 'pending' : 'completed',
                             orderId: String(txRecord.id)
                         }
                     });

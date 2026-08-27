@@ -353,7 +353,7 @@ const topupGas = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         const config = yield prisma_1.default.systemConfig.findFirst();
         const gasPrice = (config === null || config === void 0 ? void 0 : config.gasPricePerM3) || Number(process.env.GAS_PRICE_PER_M3) || 3250;
         const units = Number((amount / gasPrice).toFixed(4)); // Ensure clean precision
-        const isMobileMoney = payment_method === 'mobile_money';
+        const isMobileMoney = payment_method === 'mobile_money' || payment_method === 'mtn' || payment_method === 'momo' || payment_method === 'airtel';
         // For mobile_money: call PalmKash FIRST before creating any DB records
         // This way, if PalmKash fails, nothing is created in the DB (no orphans)
         let palmKashRef = null;
@@ -430,6 +430,10 @@ const topupGas = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
                 const updatedWallet = yield tx.wallet.update({
                     where: { id: wallet.id },
                     data: { balance: { decrement: amount } }
+                });
+                yield tx.consumerProfile.update({
+                    where: { id: consumerProfile.id },
+                    data: { walletBalance: { decrement: amount } }
                 });
                 newBalance = updatedWallet.balance;
                 yield tx.walletTransaction.create({
@@ -656,7 +660,7 @@ const getGasUsage = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         const lastGasResetDate = resetAlert ? new Date(resetAlert.errorMessage) : null;
         const where = Object.assign({ consumerId: consumerProfile.id }, (lastGasResetDate ? { createdAt: { gte: lastGasResetDate } } : {}));
         if (meter_id) {
-            where.meterId = meter_id;
+            where.meterId = parseInt(meter_id, 10);
         }
         const topups = yield prisma_1.default.gasTopup.findMany({
             where,
@@ -678,22 +682,33 @@ const getGasUsage = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         const customerOrders = yield prisma_1.default.customerOrder.findMany({
             where: { consumerId: consumerProfile.id, orderType: 'gas' }
         });
+        // Fetch all GasRechargeTransactions for this customer
+        const rechargeTransactions = yield prisma_1.default.gasRechargeTransaction.findMany({
+            where: { customerId: consumerProfile.id }
+        });
         const mappedData = topups.map(t => {
             var _a, _b;
             let matchedMethod = null;
+            let realTokenValue = null;
+            // 0. Try matching with GasRechargeTransaction directly
+            const matchedTx = rechargeTransactions.find(tx => tx.id.toString() === t.orderId);
+            if (matchedTx) {
+                matchedMethod = matchedTx.paymentMethod;
+                realTokenValue = matchedTx.tokenValue;
+            }
             // 1. Try matching with Sale
             let matchedSale = sales.find(s => s.id.toString() === t.orderId);
-            if (!matchedSale) {
+            if (!matchedSale && !matchedMethod) {
                 matchedSale = sales.find(s => {
                     const amountMatches = s.totalAmount === t.amount;
                     const timeDiff = Math.abs(new Date(s.createdAt).getTime() - new Date(t.createdAt).getTime());
                     return amountMatches && timeDiff < 5 * 60 * 1000;
                 });
             }
-            if (matchedSale) {
+            if (matchedSale && !matchedMethod) {
                 matchedMethod = matchedSale.paymentMethod;
             }
-            else {
+            else if (!matchedMethod) {
                 // 2. Try matching with CustomerOrder
                 let matchedOrder = customerOrders.find(o => o.id.toString() === t.orderId);
                 if (!matchedOrder) {
@@ -744,7 +759,7 @@ const getGasUsage = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                 units: t.units,
                 currency: t.currency,
                 status: t.status,
-                token_value: t.orderId,
+                token_value: realTokenValue || t.orderId,
                 payment_method: paymentMethod,
                 created_at: t.createdAt
             };
@@ -823,11 +838,12 @@ const getGasRewardsBalance = (req, res) => __awaiter(void 0, void 0, void 0, fun
         if (!consumerProfile) {
             return res.status(404).json({ success: false, error: 'Customer profile not found' });
         }
-        // Get live gas rewards balance from reward_wallet table
-        const rewardsWallet = yield prisma_1.default.wallet.findFirst({
-            where: { consumerId: consumerProfile.id, type: 'gas_rewards_wallet' }
+        // Calculate actual total gas rewards units from GasReward table
+        const gasRewardsSum = yield prisma_1.default.gasReward.aggregate({
+            where: { consumerId: consumerProfile.id },
+            _sum: { units: true }
         });
-        const totalUnits = rewardsWallet ? rewardsWallet.balance : 0;
+        const totalUnits = gasRewardsSum._sum.units || 0;
         res.json({
             success: true,
             data: {

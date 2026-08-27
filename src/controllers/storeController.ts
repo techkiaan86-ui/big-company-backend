@@ -59,8 +59,8 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
           consumerId: linkedConsumerId,
           retailerId: Number(retailerId),
           totalAmount: 0,
-          status: 'pending',
-          paymentMethod: 'ussd_callback',
+          status: isUssdCallback ? 'draft' : 'pending',
+          paymentMethod: isUssdCallback ? 'ussd_callback' : 'wallet', // or default
           notes: JSON.stringify({ retailer_email, phone: orderPhone })
         }
       });

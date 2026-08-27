@@ -80,14 +80,30 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                 log('Retailer not found for USSD Callback');
                 return res.status(404).json({ error: 'Retailer not found' });
             }
+            // Try to find the consumer by phone number
+            let linkedConsumerId = null;
+            const orderPhone = phone || phoneNumber || mobileNumber;
+            if (orderPhone) {
+                const matchedUser = yield prisma_1.default.user.findFirst({
+                    where: { phone: orderPhone }
+                });
+                if (matchedUser) {
+                    const matchedConsumer = yield prisma_1.default.consumerProfile.findUnique({
+                        where: { userId: matchedUser.id }
+                    });
+                    if (matchedConsumer) {
+                        linkedConsumerId = matchedConsumer.id;
+                    }
+                }
+            }
             const sale = yield prisma_1.default.sale.create({
                 data: {
-                    consumerId: null,
+                    consumerId: linkedConsumerId,
                     retailerId: Number(retailerId),
                     totalAmount: 0,
-                    status: 'draft',
-                    paymentMethod: 'ussd_callback',
-                    notes: JSON.stringify({ retailer_email, phone: phone || phoneNumber || mobileNumber })
+                    status: isUssdCallback ? 'draft' : 'pending',
+                    paymentMethod: isUssdCallback ? 'ussd_callback' : 'wallet', // or default
+                    notes: JSON.stringify({ retailer_email, phone: orderPhone })
                 }
             });
             if ((_a = retailer.user) === null || _a === void 0 ? void 0 : _a.email) {
@@ -121,7 +137,7 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
         }
         log('Checking for mobile money payment...');
         let externalRef = null;
-        if (paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'airtel' || paymentMethod === 'airtel' || paymentMethod === 'airtel') {
+        if (paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'mtn' || paymentMethod === 'airtel' || paymentMethod === 'airtel' || paymentMethod === 'airtel') {
             log('Mobile money detected, importing palmKash service...');
             const palmKash = (yield Promise.resolve().then(() => __importStar(require('../services/palmKash.service')))).default;
             log('PalmKash service imported');
@@ -374,7 +390,7 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                     }
                 }
             }
-            const isMobileMoney = paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'airtel';
+            const isMobileMoney = paymentMethod === 'mobile_money' || paymentMethod === 'momo' || paymentMethod === 'mtn' || paymentMethod === 'airtel';
             if (!isMobileMoney && !isUssdCallback) {
                 console.log('Decrementing stock...');
                 for (const item of items) {
@@ -1080,14 +1096,21 @@ exports.getWalletBalance = getWalletBalance;
 const getRewardsBalance = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const consumerProfile = yield prisma_1.default.consumerProfile.findUnique({
-            where: { userId: req.user.id }
+            where: { userId: req.user.id },
+            include: { gasRewards: true }
         });
         if (!consumerProfile) {
             return res.status(404).json({ error: 'Consumer profile not found' });
         }
+        const totalGasRewards = consumerProfile.gasRewards.reduce((sum, r) => sum + r.units, 0);
+        const rewardsPoints = Math.round(totalGasRewards * 100);
         res.json({
-            points: consumerProfile.rewardsPoints,
-            tier: 'Bronze'
+            success: true,
+            data: {
+                total_units: totalGasRewards,
+                points: rewardsPoints,
+                tier: 'Bronze'
+            }
         });
     }
     catch (error) {
@@ -1260,7 +1283,7 @@ const repayLoan = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         // ==========================================
         // PALMKASH INTEGRATION
         // ==========================================
-        const isMobileMoney = payment_method === 'mobile_money' || payment_method === 'momo' || payment_method === 'airtel';
+        const isMobileMoney = payment_method === 'mobile_money' || payment_method === 'momo' || payment_method === 'mtn' || payment_method === 'airtel';
         if (isMobileMoney) {
             const creditWallet = yield prisma_1.default.wallet.findFirst({
                 where: { consumerId: consumerProfile.id, type: 'credit_wallet' }
