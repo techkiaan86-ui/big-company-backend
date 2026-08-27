@@ -368,6 +368,12 @@ export const handleUSSDRequestCore = async (req: Request, res: Response) => {
                 data: { balance: { decrement: selectedAmount } }
               });
 
+              // Sync with ConsumerProfile walletBalance
+              await tx.consumerProfile.update({
+                where: { id: card.consumerId },
+                data: { walletBalance: { decrement: selectedAmount } }
+              });
+
               // Log Wallet transaction history
               await tx.walletTransaction.create({
                 data: {
@@ -501,6 +507,10 @@ export const handleUSSDRequestCore = async (req: Request, res: Response) => {
                   where: { id: wallet.id },
                   data: { balance: { increment: selectedAmount } }
                 });
+                await prisma.consumerProfile.update({
+                  where: { id: card.consumerId },
+                  data: { walletBalance: { increment: selectedAmount } }
+                });
                 await prisma.walletTransaction.create({
                   data: {
                     walletId: wallet.id,
@@ -556,6 +566,10 @@ export const handleUSSDRequestCore = async (req: Request, res: Response) => {
               await prisma.wallet.update({
                 where: { id: wallet.id },
                 data: { balance: { increment: selectedAmount } }
+              });
+              await prisma.consumerProfile.update({
+                where: { id: card.consumerId },
+                data: { walletBalance: { increment: selectedAmount } }
               });
 
               await prisma.walletTransaction.create({

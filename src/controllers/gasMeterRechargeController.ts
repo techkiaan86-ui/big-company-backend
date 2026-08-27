@@ -190,6 +190,8 @@ export const initiateGasMeterRecharge = async (req: AuthRequest, res: Response) 
                     data: { balance: { decrement: totalMoneyAmount } },
                 });
 
+                // (Credit wallet doesn't deduct from walletBalance. walletBalance is for dashboard_wallet.)
+                
                 await prisma.walletTransaction.create({
                     data: {
                         walletId: creditWallet.id,

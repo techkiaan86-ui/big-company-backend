@@ -429,6 +429,12 @@ export const topupGas = async (req: AuthRequest, res: Response) => {
                     where: { id: wallet.id },
                     data: { balance: { decrement: amount } }
                 });
+
+                await tx.consumerProfile.update({
+                    where: { id: consumerProfile.id },
+                    data: { walletBalance: { decrement: amount } }
+                });
+
                 newBalance = updatedWallet.balance;
 
                 await tx.walletTransaction.create({
