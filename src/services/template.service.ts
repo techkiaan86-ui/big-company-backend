@@ -64,13 +64,13 @@ export class TemplateService {
    * Fetches template from DB or returns default fallback.
    */
   static async getTemplate(nameOrSlug: string, data: Record<string, any>): Promise<{ subject: string; html: string; isSMS?: boolean }> {
-    const prisma = new (await import('@prisma/client')).PrismaClient();
+    const { default: globalPrisma } = await import('../utils/prisma');
     let templateName = nameOrSlug;
     
     try {
       // 1. Try to resolve the template name from the event mapping first
       // @ts-ignore
-      const mapping = await prisma.emailEvent.findUnique({
+      const mapping = await globalPrisma.emailEvent.findUnique({
         where: { eventSlug: nameOrSlug }
       });
       
@@ -81,7 +81,7 @@ export class TemplateService {
 
       // 2. Fetch the actual template content
       // @ts-ignore
-      const dbTemplate = await prisma.emailTemplate.findUnique({
+      const dbTemplate = await globalPrisma.emailTemplate.findUnique({
         where: { name: templateName, isActive: true }
       });
 
