@@ -566,7 +566,9 @@ export const getCustomers = async (req: AuthRequest, res: Response) => {
         if (isGasMeter) {
           return false;
         }
-        if (!sale.saleItems || sale.saleItems.length === 0) {
+        // USSD shopping orders have 0 saleItems by design — still count them
+        const isUssdOrder = sale.paymentMethod === 'ussd_callback';
+        if (!isUssdOrder && (!sale.saleItems || sale.saleItems.length === 0)) {
           return false;
         }
 

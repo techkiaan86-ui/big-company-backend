@@ -611,7 +611,14 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
     const { status, payment_status, search, limit = '20', offset = '0' } = req.query;
 
     const where: any = {
-      retailerId: retailerProfile.id
+      retailerId: retailerProfile.id,
+      // Exclude gas recharge sales: they have a meterId but no saleItems
+      NOT: {
+        AND: [
+          { meterId: { not: null } },
+          { saleItems: { none: {} } }
+        ]
+      }
     };
 
     if (status) {
