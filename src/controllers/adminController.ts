@@ -622,6 +622,7 @@ export const getCustomers = async (req: AuthRequest, res: Response) => {
     });
 
     let totalPlatformRevenue = 0;
+    let totalPlatformOrders = 0;
     for (const sale of allSales) {
       const saleRetailer = retailerMap.get(sale.retailerId);
       if (!saleRetailer) continue; // Skip sales from deleted retailers
@@ -631,12 +632,22 @@ export const getCustomers = async (req: AuthRequest, res: Response) => {
         continue;
       }
 
+      // EXCLUDE GAS TOP-UPS from orders count (same logic as activeSales)
+      const isGasMeter = sale.meterId && !sale.meterId.startsWith('ORD-') && !sale.meterId.startsWith('GAS-');
+      if (!isGasMeter) {
+        // Count USSD orders (which might have 0 items) OR regular sales with items
+        const isUssdOrder = sale.paymentMethod === 'ussd_callback';
+        if (isUssdOrder || (sale.saleItems && sale.saleItems.length > 0)) {
+            totalPlatformOrders++;
+        }
+      }
+
       for (const item of sale.saleItems || []) {
         totalPlatformRevenue += (item.price || 0) * (item.quantity || 0);
       }
     }
 
-    res.json({ success: true, customers: formattedCustomers, totalPlatformRevenue });
+    res.json({ success: true, customers: formattedCustomers, totalPlatformRevenue, totalPlatformOrders });
   } catch (error: any) {
     console.error('Get Customers Error:', error);
     res.status(500).json({ success: false, error: error.message });
