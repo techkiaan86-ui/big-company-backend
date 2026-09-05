@@ -834,7 +834,7 @@ export const getMyOrders = async (req: AuthRequest, res: Response) => {
       where: { 
         consumerId: consumerProfile.id,
         paymentMethod: { not: 'gas_rewards' },
-        meterId: null,  // Exclude gas recharge sales (they have a meterId set)
+        // meterId check removed because mobile money orders store their externalRef here.
         saleItems: {
           some: {} // Only include sales with actual products, hides ghost recharges
         }

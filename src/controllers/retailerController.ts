@@ -43,18 +43,18 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
       gasRewardsAggregate,
       systemConfig
     ] = await Promise.all([
-      // Today's Sales
       prisma.sale.findMany({
         where: {
           retailerId: retailerProfile.id,
-          createdAt: { gte: today, lt: tomorrow }
+          createdAt: { gte: today, lt: tomorrow },
+          saleItems: { some: {} }
         },
         include: { saleItems: true }
       }),
-      // All Sales (for revenue stats)
       prisma.sale.findMany({
         where: {
           retailerId: retailerProfile.id,
+          saleItems: { some: {} },
           ...(dateFilter ? { createdAt: dateFilter } : {})
         }
       }),
@@ -89,6 +89,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
       where: {
         retailerId: retailerProfile.id,
         status: { not: 'cancelled' },  // Exclude cancelled orders from revenue
+        saleItems: { some: {} },
         ...(dateFilter ? { createdAt: dateFilter } : {})
       },
       include: {
@@ -218,7 +219,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
 
     const formattedRecentOrders = recentOrders.map(order => ({
       id: order.id.toString(),
-      customer: order.consumerProfile?.fullName || 'Walk-in Customer',
+      customer: order.consumerProfile?.fullName || (order.consumerProfile?.membershipType === 'catering' ? 'Catering' : 'Walk-in Customer'),
       items: 0,
       total: order.totalAmount,
       status: order.status,
@@ -653,7 +654,7 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
     const formattedOrders = sales.map(sale => ({
       id: sale.id,
       display_id: sale.id.toString(),
-      customer_name: sale.consumerProfile?.fullName || 'Walk-in Customer',
+      customer_name: sale.consumerProfile?.fullName || sale.consumerProfile?.user?.name || (sale.consumerProfile?.membershipType === 'catering' ? 'Catering' : 'Walk-in Customer'),
       customer_phone: sale.consumerProfile?.user?.phone || 'N/A',
       customer_email: sale.consumerProfile?.user?.email,
       items: [], // saleItems not included in query, would need separate fetch
@@ -715,7 +716,7 @@ export const getOrder = async (req: AuthRequest, res: Response) => {
     const formattedOrder = {
       id: sale.id,
       display_id: sale.id.toString(),
-      customer_name: sale.consumerProfile?.fullName || 'Walk-in Customer',
+      customer_name: sale.consumerProfile?.fullName || sale.consumerProfile?.user?.name || (sale.consumerProfile?.membershipType === 'catering' ? 'Catering' : 'Walk-in Customer'),
       customer_phone: sale.consumerProfile?.user?.phone || 'N/A',
       customer_email: sale.consumerProfile?.user?.email,
       items: sale.saleItems.map(item => ({
@@ -3971,7 +3972,7 @@ export const getPaymentAuditLogs = async (req: AuthRequest, res: Response) => {
         id: sale.id.toString(),
         cardId: sale.meterId || card?.uid || 'N/A', // Use meterId as fallback for card UID if we start storing it there
         orderId: sale.id,
-        customerName: sale.consumerProfile?.fullName || sale.consumerProfile?.user?.name || 'Walk-in Customer',
+        customerName: sale.consumerProfile?.fullName || sale.consumerProfile?.user?.name || (sale.consumerProfile?.membershipType === 'catering' ? 'Catering' : 'Walk-in Customer'),
         amount: sale.totalAmount,
         method: sale.paymentMethod,
         createdAt: sale.createdAt.toISOString()
