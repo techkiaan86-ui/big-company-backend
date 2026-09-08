@@ -3015,6 +3015,11 @@ export const getCustomerAccountDetails = async (req: AuthRequest, res: Response)
         },
         sales: {
           orderBy: { createdAt: 'desc' },
+          // Same filter as consumer getMyOrders: exclude gas_rewards and require actual items
+          where: {
+            paymentMethod: { not: 'gas_rewards' },
+            saleItems: { some: {} }
+          },
           include: {
             saleItems: {
               include: {
