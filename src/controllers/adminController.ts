@@ -588,12 +588,6 @@ export const getCustomers = async (req: AuthRequest, res: Response) => {
 
     const formattedCustomers = customers.map(customer => {
       const activeSales = customer.sales.filter(sale => {
-        // Exclude gas top-up purchases (which have no saleItems or have a real meterId).
-        // Standard retail orders paid via PalmKash store references starting with 'ORD-' in meterId.
-        const isGasMeter = sale.meterId && !sale.meterId.startsWith('ORD-') && !sale.meterId.startsWith('GAS-');
-        if (isGasMeter) {
-          return false;
-        }
         // USSD shopping orders have 0 saleItems by design — still count them
         const isUssdOrder = sale.paymentMethod === 'ussd_callback';
         if (!isUssdOrder && (!sale.saleItems || sale.saleItems.length === 0)) {
@@ -660,14 +654,12 @@ export const getCustomers = async (req: AuthRequest, res: Response) => {
         continue;
       }
 
-      // EXCLUDE GAS TOP-UPS from orders count (same logic as activeSales)
-      const isGasMeter = sale.meterId && !sale.meterId.startsWith('ORD-') && !sale.meterId.startsWith('GAS-');
-      if (!isGasMeter) {
-        // Count USSD orders (which might have 0 items) OR regular sales with items
-        const isUssdOrder = sale.paymentMethod === 'ussd_callback';
-        if (isUssdOrder || (sale.saleItems && sale.saleItems.length > 0)) {
-            totalPlatformOrders++;
-        }
+      // EXCLUDE GAS TOP-UPS from orders count using reliable criteria instead of meterId
+      const isUssdOrder = sale.paymentMethod === 'ussd_callback';
+      const hasGasItem = sale.saleItems && sale.saleItems.some(item => gasProductIds.has(item.productId));
+      
+      if (!hasGasItem && (isUssdOrder || (sale.saleItems && sale.saleItems.length > 0))) {
+        totalPlatformOrders++;
       }
 
       for (const item of sale.saleItems || []) {
