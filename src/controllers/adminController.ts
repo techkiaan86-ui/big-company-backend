@@ -106,11 +106,39 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
     const txTotal = await prisma.walletTransaction.count();
     const walletTopups = txs.filter(t => t.type === 'top_up').length;
     const gasPurchases = txs.filter(t => t.type === 'gas_payment' || t.type === 'gas_purchase').length;
-    const nfcPayments = sales.filter(s => s.paymentMethod === 'nfc' && s.createdAt >= last30d).length;
-    const totalVolume = Math.round(txs
+    const nfcPayments = sales.filter(s => s.paymentMethod === 'nfc' || s.paymentMethod === 'nfc_card').filter(s => s.createdAt >= last30d).length;
+    
+    const walletVolume = txs
       .filter(t => lastGasResetDate ? t.createdAt >= lastGasResetDate : true)
-      .reduce((acc, t) => acc + Math.abs(t.amount), 0)
-    );
+      .reduce((acc, t) => acc + Math.abs(t.amount), 0);
+
+    const walletPaymentMethods = ['wallet', 'dashboard_wallet', 'credit_wallet', 'nfc_card', 'nfc'];
+    
+    const directSalesVolume = sales
+      .filter(s => s.createdAt >= last30d && (lastGasResetDate ? s.createdAt >= lastGasResetDate : true))
+      .filter(s => !walletPaymentMethods.includes(s.paymentMethod))
+      .reduce((acc, s) => acc + s.totalAmount, 0);
+
+    const wholesaleOrdersVolume = wholesaleOrders
+      .filter(o => o.createdAt >= last30d && (lastGasResetDate ? o.createdAt >= lastGasResetDate : true))
+      .filter(o => !walletPaymentMethods.includes(o.paymentMethod))
+      .reduce((acc, o) => acc + o.totalAmount, 0);
+
+    // Calculate direct gas volume (GasTopups not paid via wallet)
+    const recentGasTopups = await prisma.gasTopup.findMany({
+      where: {
+        status: { in: ['completed', 'success'] },
+        createdAt: { gte: last30d },
+        ...(lastGasResetDate ? { createdAt: { gte: lastGasResetDate } } : {})
+      }
+    });
+    const walletGasVolume = txs
+      .filter(t => (t.type === 'gas_payment' || t.type === 'gas_purchase') && (lastGasResetDate ? t.createdAt >= lastGasResetDate : true))
+      .reduce((acc, t) => acc + Math.abs(t.amount), 0);
+    const totalGasTopupVolume = recentGasTopups.reduce((acc, g) => acc + g.amount, 0);
+    const directGasVolume = Math.max(0, totalGasTopupVolume - walletGasVolume);
+
+    const totalVolume = Math.round(walletVolume + directSalesVolume + wholesaleOrdersVolume + directGasVolume);
 
     // 4. Loans (Include both customer loans and retailer credit loans)
     const loans = await prisma.loan.findMany();
