@@ -5283,20 +5283,25 @@ export const endGasPeriod = async (req: AuthRequest, res: Response) => {
 
 export const adminGetGasMeters = async (req: AuthRequest, res: Response) => {
   try {
+    // Fetch meters and topups only — avoid crashing on orphaned consumerId FKs
     const meters = await prisma.gasMeter.findMany({
-      include: {
-        consumerProfile: {
-          include: { user: true }
-        },
-        gasTopups: true
-      }
+      include: { gasTopups: true }
     });
+
+    // Fetch all consumer profiles separately (safe — no FK constraint issue)
+    const consumerIds = [...new Set(meters.map(m => m.consumerId).filter(Boolean))] as number[];
+    const consumers = await prisma.consumerProfile.findMany({
+      where: { id: { in: consumerIds } },
+      include: { user: true }
+    });
+    const consumerMap = new Map(consumers.map(c => [c.id, c]));
 
     const metersWithMetrics = meters.map(meter => {
       const totalUnits = meter.gasTopups.reduce((sum, t) => sum + (t.units || 0), 0);
       const totalPaid = meter.gasTopups.reduce((sum, t) => sum + (t.amount || 0), 0);
       return {
         ...meter,
+        consumerProfile: consumerMap.get(meter.consumerId) || null,
         totalUnits,
         totalPaid
       };
