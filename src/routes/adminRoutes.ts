@@ -95,20 +95,25 @@ import {
   adminGetGasMeters,
   adminUnlinkGasMeter,
 } from '../controllers/adminController';
+import { getAdminTaxes } from '../controllers/taxController';
 import { getSuppliers, createSupplier, updateSupplier, deleteSupplier } from '../controllers/supplierController';
 import { getJobs, createJob, updateJob, deleteJob, getApplications, createApplication, updateApplicationStatus } from '../controllers/recruitmentController';
 import { getDeals, createDeal, updateDeal, deleteDeal } from '../controllers/dealsController';
 import { getGasPricingPlans, createGasPricingPlan, updateGasPricingPlan, deleteGasPricingPlan } from '../controllers/gasPricingPlanController';
-import { authenticate } from '../middleware/authMiddleware';
+import { authenticate, authorize } from '../middleware/authMiddleware';
 import { enforceReadOnly } from '../middleware/readOnlyMiddleware';
 import { getGasRewardsLeaderboard } from '../controllers/gasController';
 
 const router = Router();
 
 router.use(authenticate);
+router.use(authorize('admin', 'superadmin'));
 router.use(enforceReadOnly);
 
 router.get('/dashboard', getDashboard);
+
+// Tax Management
+router.get('/taxes', getAdminTaxes);
 
 // Customer Routes
 router.get('/customers', getCustomers);

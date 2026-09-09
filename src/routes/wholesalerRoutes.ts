@@ -60,9 +60,13 @@ import {
   updateWholesalerProfile,
   updateWholesalerSettings
 } from '../controllers/profileController';
+import { getWholesalerTaxes } from '../controllers/taxController';
 import { authenticate } from '../middleware/authMiddleware';
 
 const router = Router();
+
+// Tax Management
+router.get('/taxes', authenticate, getWholesalerTaxes);
 
 router.use(authenticate);
 

@@ -56,9 +56,13 @@ import {
   payRetailerLoan,
   configureDraftOrder
 } from '../controllers/retailerController';
+import { getRetailerTaxes } from '../controllers/taxController';
 import { authenticate } from '../middleware/authMiddleware';
 
 const router = Router();
+
+// Tax Management
+router.get('/taxes', authenticate, getRetailerTaxes);
 
 router.use(authenticate);
 

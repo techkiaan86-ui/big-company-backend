@@ -1,8 +1,9 @@
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { AuthRequest } from '../middleware/authMiddleware';
 import prisma from '../utils/prisma';
 import { uploadImage } from '../utils/cloudinary';
 import { hashPassword } from '../utils/auth';
+import { reverseVATCalculation } from '../utils/pricingReversalUtils';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -5158,6 +5159,7 @@ export const getProfitInvoiceStats = async (req: AuthRequest, res: Response) => 
     let totalRevenue = 0;
     let totalCost = 0;
     let gasRewardsGiven = 0;
+    let tax = 0;
 
     if (type === 'Retailer') {
       const retailer = await prisma.retailerProfile.findUnique({ where: { id: Number(id) } });
@@ -5179,11 +5181,18 @@ export const getProfitInvoiceStats = async (req: AuthRequest, res: Response) => 
 
       for (const sale of sales) {
         for (const item of sale.saleItems) {
-          totalRevenue += (item.price * item.quantity);
+          const itemRevenue = item.price * item.quantity;
+          totalRevenue += itemRevenue;
           const cost = item.product.costPrice && item.product.costPrice > 0
             ? item.product.costPrice
             : item.price / (1 + retailerMarkup / 100);
           totalCost += (cost * item.quantity);
+
+          // Tax calculation
+          const tType = item.product ? (item.product as any).taxType : 'A';
+          const cleanTaxType = tType || 'A';
+          const { totalTax } = reverseVATCalculation(item.price, cleanTaxType);
+          tax += totalTax * item.quantity;
         }
       }
 
@@ -5207,7 +5216,8 @@ export const getProfitInvoiceStats = async (req: AuthRequest, res: Response) => 
           totalOrders: sales.length,
           totalRevenue,
           grossProfit: totalRevenue - totalCost,
-          gasRewardsGiven
+          gasRewardsGiven,
+          tax: Math.round(tax * 100) / 100
         }
       });
 
@@ -5228,11 +5238,18 @@ export const getProfitInvoiceStats = async (req: AuthRequest, res: Response) => 
 
       for (const order of orders) {
         for (const item of order.orderItems) {
-          totalRevenue += (item.price * item.quantity);
+          const itemRevenue = item.price * item.quantity;
+          totalRevenue += itemRevenue;
           const cost = item.product.supplierCost !== null && item.product.supplierCost !== undefined && item.product.supplierCost > 0
             ? item.product.supplierCost
             : (item.product.costPrice || 0);
           totalCost += (cost * item.quantity);
+
+          // Tax calculation
+          const tType = item.product ? (item.product as any).taxType : 'A';
+          const cleanTaxType = tType || 'A';
+          const { totalTax } = reverseVATCalculation(item.price, cleanTaxType);
+          tax += totalTax * item.quantity;
         }
       }
 
@@ -5242,7 +5259,8 @@ export const getProfitInvoiceStats = async (req: AuthRequest, res: Response) => 
           totalOrders: orders.length,
           totalRevenue,
           grossProfit: totalRevenue - totalCost,
-          gasRewardsGiven: 0
+          gasRewardsGiven: 0,
+          tax: Math.round(tax * 100) / 100
         }
       });
     } else {
