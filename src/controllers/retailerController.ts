@@ -951,8 +951,11 @@ export const createSale = async (req: AuthRequest, res: Response) => {
     }
     // --- End Module 5 ---
 
-    // Validate Gas Reward Wallet ID if provided
+    // Validate Gas Reward Wallet ID if provided and save the target consumer's ID.
+    // This is needed so cash/card POS sales can still award gas rewards even though
+    // no consumerId is set from the payment method itself.
     const { gasRewardWalletId } = req.body;
+    let rewardConsumerId: number | null = null;
     if (gasRewardWalletId) {
       const rewardConsumer = await prisma.consumerProfile.findFirst({
         where: { gasRewardWalletId: gasRewardWalletId }
@@ -960,6 +963,7 @@ export const createSale = async (req: AuthRequest, res: Response) => {
       if (!rewardConsumer) {
         return res.status(400).json({ error: `Invalid Gas Reward Wallet ID: ${gasRewardWalletId}` });
       }
+      rewardConsumerId = rewardConsumer.id;
     }
 
     // 1. Validate items and stock
@@ -1173,10 +1177,16 @@ export const createSale = async (req: AuthRequest, res: Response) => {
       // ==========================================
       // GAS REWARD LOGIC (POS)
       // ==========================================
-      const isRewardEligible = ['dashboard_wallet', 'mobile_money', 'wallet'].includes(payment_method);
+      // Reward is eligible for standard payment methods OR whenever a gasRewardWalletId
+      // was explicitly entered at checkout (covers cash/card POS payments too).
+      const isRewardEligible = ['dashboard_wallet', 'mobile_money', 'wallet'].includes(payment_method) || !!rewardConsumerId;
 
 
-      if (isRewardEligible && targetRewardId && consumerId && !isMobileMoney) {
+      // rewardConsumerId is the owner of the gasRewardWalletId entered at checkout —
+      // that is ALWAYS the intended reward target. consumerId (the shopper) is only
+      // a fallback for when no gasRewardWalletId was entered at all.
+      const effectiveRewardConsumerId = rewardConsumerId || consumerId;
+      if (isRewardEligible && targetRewardId && effectiveRewardConsumerId && !isMobileMoney) {
         // Calculate Profit
         let totalProfit = 0;
 
@@ -1199,7 +1209,7 @@ export const createSale = async (req: AuthRequest, res: Response) => {
 
           await prisma.gasReward.create({
             data: {
-              consumerId: consumerId,
+              consumerId: effectiveRewardConsumerId,
               saleId: sale.id,
               meterId: targetRewardId,
               units: rewardUnits,

@@ -109,15 +109,23 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
     const gasPurchases = txs.filter(t => t.type === 'gas_payment' || t.type === 'gas_purchase').length;
     const nfcPayments = sales.filter(s => s.paymentMethod === 'nfc' || s.paymentMethod === 'nfc_card').filter(s => s.createdAt >= last30d).length;
     
+    // Only count DEBIT (outflow) wallet transactions to avoid double-counting
+    // transfers/reward-shares (which create both a debit and a credit record).
+    // ALSO exclude gas_meter_recharge debits — those are counted via GasTopup table below.
     const walletVolume = txs
       .filter(t => lastGasResetDate ? t.createdAt >= lastGasResetDate : true)
+      .filter(t => t.amount < 0)
+      .filter(t => t.type !== 'gas_meter_recharge') // gas recharges counted separately via GasTopup
       .reduce((acc, t) => acc + Math.abs(t.amount), 0);
 
     const walletPaymentMethods = ['wallet', 'dashboard_wallet', 'credit_wallet', 'nfc_card', 'nfc'];
     
+    // Exclude gas-recharge Sales (those with a meterId set) because the same
+    // payment is already captured in directGasVolume via the GasTopup table.
     const directSalesVolume = sales
       .filter(s => s.createdAt >= last30d && (lastGasResetDate ? s.createdAt >= lastGasResetDate : true))
       .filter(s => !walletPaymentMethods.includes(s.paymentMethod))
+      .filter(s => !s.meterId)  // exclude gas recharges already counted in directGasVolume
       .reduce((acc, s) => acc + s.totalAmount, 0);
 
     const wholesaleOrdersVolume = wholesaleOrders
@@ -133,13 +141,14 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
         ...(lastGasResetDate ? { createdAt: { gte: lastGasResetDate } } : {})
       }
     });
-    const walletGasVolume = txs
-      .filter(t => (t.type === 'gas_payment' || t.type === 'gas_purchase') && (lastGasResetDate ? t.createdAt >= lastGasResetDate : true))
-      .reduce((acc, t) => acc + Math.abs(t.amount), 0);
-    const totalGasTopupVolume = recentGasTopups.reduce((acc, g) => acc + g.amount, 0);
-    const directGasVolume = Math.max(0, totalGasTopupVolume - walletGasVolume);
+    // GasTopup is the single source of truth for all gas recharges (wallet, mobile money, NFC).
+    // We do NOT subtract walletGasVolume here because walletVolume above already excludes
+    // gas_meter_recharge type transactions — so there is no overlap.
+    const gasVolume = recentGasTopups
+      .filter(g => lastGasResetDate ? g.createdAt >= lastGasResetDate : true)
+      .reduce((acc, g) => acc + g.amount, 0);
 
-    const totalVolume = Math.round(walletVolume + directSalesVolume + wholesaleOrdersVolume + directGasVolume);
+    const totalVolume = Math.round(walletVolume + directSalesVolume + wholesaleOrdersVolume + gasVolume);
 
     // 4. Loans (Include both customer loans and retailer credit loans)
     const loans = await prisma.loan.findMany();
