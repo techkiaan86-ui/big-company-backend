@@ -90,7 +90,10 @@ import {
   generateAdminProfitInvoice,
   getProfitInvoiceRecipients,
   getProfitInvoiceStats,
-  endGasPeriod
+  endGasPeriod,
+  adminRegisterGasMeter,
+  adminGetGasMeters,
+  adminUnlinkGasMeter,
 } from '../controllers/adminController';
 import { getSuppliers, createSupplier, updateSupplier, deleteSupplier } from '../controllers/supplierController';
 import { getJobs, createJob, updateJob, deleteJob, getApplications, createApplication, updateApplicationStatus } from '../controllers/recruitmentController';
@@ -98,6 +101,7 @@ import { getDeals, createDeal, updateDeal, deleteDeal } from '../controllers/dea
 import { getGasPricingPlans, createGasPricingPlan, updateGasPricingPlan, deleteGasPricingPlan } from '../controllers/gasPricingPlanController';
 import { authenticate } from '../middleware/authMiddleware';
 import { enforceReadOnly } from '../middleware/readOnlyMiddleware';
+import { getGasRewardsLeaderboard } from '../controllers/gasController';
 
 const router = Router();
 
@@ -144,6 +148,14 @@ router.put('/nfc-cards/:id/unlink', adminUnlinkCard);
 router.post('/nfc-cards/:id/link', adminLinkCard);
 router.post('/nfc-cards/:id/pin', adminChangeNFCPin);
 router.get('/nfc-cards/:id/transactions', getNFCCardTransactions);
+
+// Admin Gas Meters
+router.get('/gas-meters', adminGetGasMeters);
+router.post('/gas-meters', adminRegisterGasMeter);
+router.put('/gas-meters/:id/unlink', adminUnlinkGasMeter);
+
+// Rewards & Leaderboard
+router.get('/gas-rewards/leaderboard', getGasRewardsLeaderboard);
 
 // Product Routes
 router.get('/products', getProducts);

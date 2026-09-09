@@ -5278,3 +5278,102 @@ export const endGasPeriod = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+// --- Admin Gas Meters Management ---
+
+export const adminGetGasMeters = async (req: AuthRequest, res: Response) => {
+  try {
+    const meters = await prisma.gasMeter.findMany({
+      include: {
+        consumerProfile: {
+          include: { user: true }
+        },
+        gasTopups: true
+      }
+    });
+
+    const metersWithMetrics = meters.map(meter => {
+      const totalUnits = meter.gasTopups.reduce((sum, t) => sum + (t.units || 0), 0);
+      const totalPaid = meter.gasTopups.reduce((sum, t) => sum + (t.amount || 0), 0);
+      return {
+        ...meter,
+        totalUnits,
+        totalPaid
+      };
+    });
+
+    res.json({ success: true, data: metersWithMetrics });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+export const adminRegisterGasMeter = async (req: AuthRequest, res: Response) => {
+  try {
+    const { meter_number, consumerId, alias_name, owner_name, owner_phone } = req.body;
+
+    if (!meter_number || !consumerId) {
+      return res.status(400).json({ success: false, error: 'Meter number and consumer ID are required' });
+    }
+
+    const consumerProfile = await prisma.consumerProfile.findUnique({ where: { id: Number(consumerId) } });
+    if (!consumerProfile) {
+      return res.status(404).json({ success: false, error: 'Customer profile not found' });
+    }
+
+    const existingMeter = await prisma.gasMeter.findFirst({
+      where: { meterNumber: meter_number }
+    });
+
+    if (existingMeter) {
+      if (existingMeter.status === 'active' && existingMeter.consumerId !== consumerProfile.id) {
+        return res.status(400).json({ success: false, error: 'Meter is already active and assigned to another customer.' });
+      }
+      
+      const updatedMeter = await prisma.gasMeter.update({
+        where: { id: existingMeter.id },
+        data: {
+          consumerId: consumerProfile.id,
+          status: 'active',
+          aliasName: alias_name || 'My Meter',
+          ownerName: owner_name || existingMeter.ownerName,
+          ownerPhone: owner_phone || existingMeter.ownerPhone
+        }
+      });
+      return res.json({ success: true, data: updatedMeter, message: 'Meter reassigned successfully' });
+    }
+
+    const newMeter = await prisma.gasMeter.create({
+      data: {
+        consumerId: consumerProfile.id,
+        meterNumber: meter_number,
+        aliasName: alias_name || 'My Meter',
+        ownerName: owner_name,
+        ownerPhone: owner_phone,
+        status: 'active'
+      }
+    });
+
+    res.json({ success: true, data: newMeter, message: 'Gas meter added successfully' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+export const adminUnlinkGasMeter = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const meter = await prisma.gasMeter.findUnique({ where: { id: Number(id) } });
+    if (!meter) return res.status(404).json({ success: false, error: 'Gas meter not found' });
+
+    await prisma.gasMeter.update({
+      where: { id: Number(id) },
+      data: { status: 'removed' }
+    });
+
+    res.json({ success: true, message: 'Gas meter unlinked successfully' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
