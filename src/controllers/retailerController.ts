@@ -4217,7 +4217,7 @@ export const payRetailerLoan = async (req: AuthRequest, res: Response) => {
 export const configureDraftOrder = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { items = [] } = req.body;
+    const { items = [], rewardWalletId } = req.body;
 
     const currentSale = await prisma.sale.findUnique({
       where: { id: Number(id) },
@@ -4261,13 +4261,33 @@ export const configureDraftOrder = async (req: AuthRequest, res: Response) => {
 
     // Parse customer phone number from notes
     let customerPhone: string | null = null;
+    let existingNotes: Record<string, any> = {};
     try {
-      const notesData = JSON.parse(currentSale.notes || '{}');
-      customerPhone = notesData.phone || notesData.phoneNumber || notesData.mobileNumber || null;
+      existingNotes = JSON.parse(currentSale.notes || '{}');
+      customerPhone = existingNotes.phone || existingNotes.phoneNumber || existingNotes.mobileNumber || null;
     } catch (e) {
       console.error('Failed to parse sale notes for phone number:', e);
     }
 
+    // If retailer provided a Reward Wallet ID (customer's gas meter number),
+    // look up the gas meter to get gasRewardWalletId (meter DB id) and rewardConsumerId
+    if (rewardWalletId) {
+      try {
+        const gasMeter = await prisma.gasMeter.findFirst({
+          where: { meterNumber: String(rewardWalletId), status: 'active' }
+        });
+        if (gasMeter) {
+          existingNotes.gasRewardWalletId = gasMeter.id;
+          existingNotes.rewardConsumerId = gasMeter.consumerId;
+        } else {
+          console.warn(`[ConfigureOrder] Reward Wallet ID "${rewardWalletId}" not found or inactive. Reward will be skipped.`);
+        }
+      } catch (rewardLookupErr) {
+        console.error('[ConfigureOrder] Failed to look up reward wallet:', rewardLookupErr);
+      }
+    }
+
+    const updatedNotes = JSON.stringify(existingNotes);
     const ordRef = `ORD-${Date.now()}`;
 
     await prisma.$transaction(async (tx) => {
@@ -4288,13 +4308,14 @@ export const configureDraftOrder = async (req: AuthRequest, res: Response) => {
         });
       }
 
-      // Update sale price, reference (meterId), and move status to pending_payment
+      // Update sale price, reference (meterId), notes with reward info, and move status to pending_payment
       await tx.sale.update({
         where: { id: Number(id) },
         data: {
           totalAmount,
           status: 'pending_payment',
-          meterId: ordRef // Stored for PalmKash webhook mapping
+          meterId: ordRef, // Stored for PalmKash webhook mapping
+          notes: updatedNotes
         }
       });
     });
