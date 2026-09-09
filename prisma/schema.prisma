@@ -629,6 +629,7 @@ model LessonProgress {
 model NfcCard {
   id              Int              @id @default(autoincrement())
   uid             String           @unique(map: "NfcCard_uid_key")
+  cardNumber      String?
   pin             String?
   status          String
   consumerId      Int?
