@@ -2543,6 +2543,41 @@ export const registerNFCCard = async (req: AuthRequest, res: Response) => {
   }
 };
 
+export const adminLinkCard = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { userId } = req.body;
+    
+    if (!userId) return res.status(400).json({ success: false, error: 'Customer ID is required' });
+    
+    const card = await prisma.nfcCard.findUnique({ where: { id: Number(id) } });
+    if (!card) return res.status(404).json({ success: false, error: 'Card not found' });
+    
+    if (card.consumerId) return res.status(400).json({ success: false, error: 'Card is already linked to a customer' });
+
+    // Try to find the consumer profile either by userId or consumerProfile id
+    let consumerId = null;
+    const profileByUserId = await prisma.consumerProfile.findUnique({ where: { userId: Number(userId) } });
+    if (profileByUserId) {
+      consumerId = profileByUserId.id;
+    } else {
+      const profileById = await prisma.consumerProfile.findUnique({ where: { id: Number(userId) } });
+      if (profileById) consumerId = profileById.id;
+    }
+
+    if (!consumerId) return res.status(404).json({ success: false, error: 'Customer profile not found' });
+    
+    await prisma.nfcCard.update({
+      where: { id: Number(id) },
+      data: { consumerId: consumerId, status: 'active' }
+    });
+    
+    res.json({ success: true, message: 'Card linked successfully' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 export const adminUnlinkCard = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;

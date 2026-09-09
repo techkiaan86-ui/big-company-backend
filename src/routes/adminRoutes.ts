@@ -40,6 +40,7 @@ import {
   blockNFCCard,
   activateNFCCard,
   adminUnlinkCard,
+  adminLinkCard,
   adminChangeNFCPin,
   getNFCCardTransactions,
   getTransactionReport,
@@ -140,6 +141,7 @@ router.post('/nfc-cards', registerNFCCard);
 router.put('/nfc-cards/:id/block', blockNFCCard);
 router.put('/nfc-cards/:id/activate', activateNFCCard);
 router.put('/nfc-cards/:id/unlink', adminUnlinkCard);
+router.post('/nfc-cards/:id/link', adminLinkCard);
 router.post('/nfc-cards/:id/pin', adminChangeNFCPin);
 router.get('/nfc-cards/:id/transactions', getNFCCardTransactions);
 
