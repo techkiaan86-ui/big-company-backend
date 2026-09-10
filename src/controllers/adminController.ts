@@ -2505,7 +2505,14 @@ export const registerNFCCard = async (req: AuthRequest, res: Response) => {
     if (!uid) return res.status(400).json({ error: 'UID is required' });
     if (!cardNumber) return res.status(400).json({ error: 'Card Number is required' });
 
-    const existingUid = await prisma.nfcCard.findUnique({ where: { uid } });
+    // Normalize UID to UPPERCASE and trim whitespace before duplicate check and save
+    // This prevents duplicates caused by case differences (e.g. 04:58:CB vs 04:58:cb)
+    const normalizedUid = uid.trim().toUpperCase();
+
+    // Use findFirst — UID already normalized to uppercase so this catches all case variants
+    const existingUid = await prisma.nfcCard.findFirst({
+      where: { uid: normalizedUid }
+    });
     if (existingUid) return res.status(400).json({ error: 'NFC Card with this UID already exists' });
 
     const existingCardNumber = await prisma.nfcCard.findFirst({ where: { cardNumber } }); 
@@ -2541,7 +2548,7 @@ export const registerNFCCard = async (req: AuthRequest, res: Response) => {
 
     const card = await prisma.nfcCard.create({
       data: {
-        uid,
+        uid: normalizedUid,
         cardNumber,
         pin: pin || '1234',
         status: finalStatus,
