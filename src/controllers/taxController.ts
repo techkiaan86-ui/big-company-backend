@@ -226,6 +226,7 @@ export const getAdminTaxes = async (req: any, res: Response) => {
       globalTotalTax += orderTax;
 
       const wId = order.wholesalerId;
+      if (!wId) return; // skip orders not linked to a wholesaler
       if (!wholesalersMap.has(wId)) {
           wholesalersMap.set(wId, {
               id: wId,
