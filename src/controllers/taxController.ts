@@ -170,17 +170,31 @@ export const getAdminTaxes = async (req: any, res: Response) => {
   try {
     const sales = await prisma.sale.findMany({
       where: { status: { in: ['completed', 'pending_payment'] } },
-      include: { saleItems: { include: { product: true } }, consumerProfile: true, retailerProfile: true },
+      include: { saleItems: { include: { product: true } }, consumerProfile: true },
       orderBy: { createdAt: 'desc' },
       take: 500 // Limit for safety
     });
 
     const orders = await prisma.order.findMany({
       where: { status: { in: ['completed', 'approved', 'delivered'] } },
-      include: { orderItems: { include: { product: true } }, retailerProfile: true, wholesalerProfile: true },
+      include: { orderItems: { include: { product: true } } },
       orderBy: { createdAt: 'desc' },
       take: 500 // Limit for safety
     });
+
+    // Manually fetch profiles to avoid Prisma crashing on deleted relations
+    const retailerIds = [...new Set([...sales.map(s => s.retailerId), ...orders.map(o => o.retailerId)].filter(Boolean))];
+    const wholesalerIds = [...new Set(orders.map(o => o.wholesalerId).filter(Boolean))];
+
+    const retailersData = await prisma.retailerProfile.findMany({
+      where: { id: { in: retailerIds } }
+    });
+    const wholesalersData = await prisma.wholesalerProfile.findMany({
+      where: { id: { in: wholesalerIds } }
+    });
+
+    const retailerMapDb = new Map(retailersData.map(r => [r.id, r]));
+    const wholesalerMapDb = new Map(wholesalersData.map(w => [w.id, w]));
 
     let globalTotalTax = 0;
     
@@ -197,7 +211,7 @@ export const getAdminTaxes = async (req: any, res: Response) => {
       if (!retailersMap.has(rId)) {
           retailersMap.set(rId, {
               id: rId,
-              name: sale.retailerProfile?.shopName || 'Unknown Retailer',
+              name: retailerMapDb.get(rId)?.shopName || 'Unknown Retailer',
               totalOrders: 0,
               totalTax: 0,
               history: []
@@ -230,7 +244,7 @@ export const getAdminTaxes = async (req: any, res: Response) => {
       if (!wholesalersMap.has(wId)) {
           wholesalersMap.set(wId, {
               id: wId,
-              name: order.wholesalerProfile?.companyName || 'Unknown Wholesaler',
+              name: wholesalerMapDb.get(wId)?.companyName || 'Unknown Wholesaler',
               totalOrders: 0,
               totalTax: 0,
               history: []
@@ -242,7 +256,7 @@ export const getAdminTaxes = async (req: any, res: Response) => {
       wholesalerData.totalTax += orderTax;
       wholesalerData.history.push({
         id: `ORD-${order.id}`,
-        customerName: order.retailerProfile?.shopName || 'Unknown Retailer (Wholesale)',
+        customerName: retailerMapDb.get(order.retailerId)?.shopName || 'Unknown Retailer (Wholesale)',
         orderAmount: order.totalAmount,
         taxPaid: Math.round(orderTax * 100) / 100,
         createdAt: order.createdAt
