@@ -273,6 +273,6 @@ export const getAdminTaxes = async (req: any, res: Response) => {
 
   } catch (error: any) {
     console.error('getAdminTaxes error:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch admin taxes' });
+    res.status(500).json({ success: false, error: 'Failed to fetch admin taxes', details: error.message, stack: error.stack });
   }
 };
