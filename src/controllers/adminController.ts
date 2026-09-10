@@ -1181,16 +1181,30 @@ export const getNFCCards = async (req: AuthRequest, res: Response) => {
       return {
         id: card.id,
         uid: card.uid,
+        cardNumber: card.cardNumber,
+        cardType: card.cardType,
         status: card.status === 'available' ? 'active' : card.status,
         balance: card.balance,
         dashboardBalance: dashboardWallet?.balance || 0,
         creditBalance: creditWallet?.balance || 0,
         user_name: candidateName,
+        user_id: card.consumerProfile?.userId || card.consumerProfile?.id || null,
         transaction_count: transactionCount,
         user_type: card.consumerProfile ? 'consumer' : (card.retailerProfile ? 'retailer' : undefined),
         created_at: card.createdAt,
         last_used: card.updatedAt,
-        consumerProfile: card.consumerProfile
+        consumerProfile: card.consumerProfile,
+        // Cardholder registration details — shown in View Details modal
+        cardholderName: card.cardholderName || card.consumerProfile?.fullName || null,
+        nationalId: card.nationalId || null,
+        phone: card.phone || card.consumerProfile?.user?.phone || null,
+        email: card.email || card.consumerProfile?.user?.email || null,
+        province: card.province || null,
+        district: card.district || null,
+        sector: card.sector || null,
+        cell: card.cell || null,
+        streetAddress: card.streetAddress || null,
+        landmark: card.landmark || null,
       };
     }));
 
