@@ -22,6 +22,7 @@ export const getRetailerTaxes = async (req: any, res: Response) => {
 
     const dateFilter = retailer.lastSettlementDate ? { gte: retailer.lastSettlementDate } : undefined;
 
+    // Retailer's sales to consumers
     const sales = await prisma.sale.findMany({
       where: {
         retailerId: retailer.id,
@@ -35,8 +36,25 @@ export const getRetailerTaxes = async (req: any, res: Response) => {
       orderBy: { createdAt: 'desc' }
     });
 
+    // Retailer's purchase orders from wholesalers (the "manufacturing/replace orders" the client mentioned)
+    const purchaseOrders = await prisma.order.findMany({
+      where: {
+        retailerId: retailer.id,
+        status: { in: ['completed', 'approved', 'delivered'] },
+        ...(dateFilter && { createdAt: dateFilter })
+      },
+      include: {
+        orderItems: { include: { product: true } },
+        wholesalerProfile: true
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
     let totalTax = 0;
-    const history = sales.map(sale => {
+    const history: any[] = [];
+
+    // Process sales tax
+    sales.forEach(sale => {
       let saleTax = 0;
       sale.saleItems.forEach(item => {
         const tType = item.product ? (item.product as any).taxType : 'A';
@@ -44,19 +62,41 @@ export const getRetailerTaxes = async (req: any, res: Response) => {
       });
       totalTax += saleTax;
 
-      return {
-        id: sale.id,
+      history.push({
+        id: `SALE-${sale.id}`,
         customerName: sale.consumerProfile?.fullName || 'Walk-in Customer',
         orderAmount: sale.totalAmount,
         taxPaid: Math.round(saleTax * 100) / 100,
+        type: 'Sale',
         createdAt: sale.createdAt
-      };
+      });
     });
+
+    // Process purchase orders tax
+    purchaseOrders.forEach(order => {
+      let orderTax = 0;
+      order.orderItems.forEach(item => {
+        const tType = item.product ? (item.product as any).taxType : 'A';
+        orderTax += calculateItemTax(item.price, item.quantity, tType);
+      });
+      totalTax += orderTax;
+
+      history.push({
+        id: `ORD-${order.id}`,
+        customerName: order.wholesalerProfile?.companyName || 'Unknown Wholesaler',
+        orderAmount: order.totalAmount,
+        taxPaid: Math.round(orderTax * 100) / 100,
+        type: 'Purchase Order',
+        createdAt: order.createdAt
+      });
+    });
+
+    history.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     res.json({
       success: true,
       data: {
-        totalOrders: sales.length,
+        totalOrders: sales.length + purchaseOrders.length,
         totalTax: Math.round(totalTax * 100) / 100,
         history
       }
@@ -67,6 +107,7 @@ export const getRetailerTaxes = async (req: any, res: Response) => {
     res.status(500).json({ success: false, error: 'Failed to fetch retailer taxes' });
   }
 };
+
 
 export const getWholesalerTaxes = async (req: any, res: Response) => {
   try {
@@ -129,21 +170,21 @@ export const getAdminTaxes = async (req: any, res: Response) => {
   try {
     const sales = await prisma.sale.findMany({
       where: { status: { in: ['completed', 'pending_payment'] } },
-      include: { saleItems: { include: { product: true } }, consumerProfile: true },
+      include: { saleItems: { include: { product: true } }, consumerProfile: true, retailerProfile: true },
       orderBy: { createdAt: 'desc' },
       take: 500 // Limit for safety
     });
 
     const orders = await prisma.order.findMany({
       where: { status: { in: ['completed', 'approved', 'delivered'] } },
-      include: { orderItems: { include: { product: true } }, retailerProfile: true },
+      include: { orderItems: { include: { product: true } }, retailerProfile: true, wholesalerProfile: true },
       orderBy: { createdAt: 'desc' },
       take: 500 // Limit for safety
     });
 
     let globalTotalTax = 0;
-    const history: any[] = [];
-
+    
+    const retailersMap = new Map<number, any>();
     sales.forEach(sale => {
       let saleTax = 0;
       sale.saleItems.forEach(item => {
@@ -151,8 +192,22 @@ export const getAdminTaxes = async (req: any, res: Response) => {
         saleTax += calculateItemTax(item.price, item.quantity, tType);
       });
       globalTotalTax += saleTax;
-
-      history.push({
+      
+      const rId = sale.retailerId;
+      if (!retailersMap.has(rId)) {
+          retailersMap.set(rId, {
+              id: rId,
+              name: sale.retailerProfile?.shopName || 'Unknown Retailer',
+              totalOrders: 0,
+              totalTax: 0,
+              history: []
+          });
+      }
+      
+      const retailerData = retailersMap.get(rId);
+      retailerData.totalOrders += 1;
+      retailerData.totalTax += saleTax;
+      retailerData.history.push({
         id: `SALE-${sale.id}`,
         customerName: sale.consumerProfile?.fullName || 'Walk-in Customer (Retail)',
         orderAmount: sale.totalAmount,
@@ -161,6 +216,7 @@ export const getAdminTaxes = async (req: any, res: Response) => {
       });
     });
 
+    const wholesalersMap = new Map<number, any>();
     orders.forEach(order => {
       let orderTax = 0;
       order.orderItems.forEach(item => {
@@ -169,7 +225,21 @@ export const getAdminTaxes = async (req: any, res: Response) => {
       });
       globalTotalTax += orderTax;
 
-      history.push({
+      const wId = order.wholesalerId;
+      if (!wholesalersMap.has(wId)) {
+          wholesalersMap.set(wId, {
+              id: wId,
+              name: order.wholesalerProfile?.companyName || 'Unknown Wholesaler',
+              totalOrders: 0,
+              totalTax: 0,
+              history: []
+          });
+      }
+
+      const wholesalerData = wholesalersMap.get(wId);
+      wholesalerData.totalOrders += 1;
+      wholesalerData.totalTax += orderTax;
+      wholesalerData.history.push({
         id: `ORD-${order.id}`,
         customerName: order.retailerProfile?.shopName || 'Unknown Retailer (Wholesale)',
         orderAmount: order.totalAmount,
@@ -178,14 +248,25 @@ export const getAdminTaxes = async (req: any, res: Response) => {
       });
     });
 
-    history.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const retailers = Array.from(retailersMap.values()).map(r => ({
+        ...r,
+        totalTax: Math.round(r.totalTax * 100) / 100,
+        history: r.history.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    }));
+    
+    const wholesalers = Array.from(wholesalersMap.values()).map(w => ({
+        ...w,
+        totalTax: Math.round(w.totalTax * 100) / 100,
+        history: w.history.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    }));
 
     res.json({
       success: true,
       data: {
         totalOrders: sales.length + orders.length,
         totalTax: Math.round(globalTotalTax * 100) / 100,
-        history: history.slice(0, 500)
+        retailers,
+        wholesalers
       }
     });
 

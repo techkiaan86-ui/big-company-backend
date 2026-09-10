@@ -590,12 +590,13 @@ export const handlePalmKashWebhook = async (req: Request, res: Response) => {
                            // Calculate Profit
                            let totalProfit = 0;
                            for (const item of sale.saleItems) {
-                               if (item.product && item.product.costPrice != null) {
+                               if (item.product) {
                                    let sellingPrice = Number(item.price);
                                    if (item.product.taxType === 'B') {
                                        sellingPrice = sellingPrice / 1.18;
                                    }
-                                   const profitPerItem = sellingPrice - Number(item.product.costPrice);
+                                   const costPrice = item.product.costPrice ? Number(item.product.costPrice) : 0;
+                                   const profitPerItem = sellingPrice - costPrice;
                                    if (profitPerItem > 0) {
                                        totalProfit += profitPerItem * Number(item.quantity);
                                    }
