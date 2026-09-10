@@ -5374,28 +5374,56 @@ export const adminRegisterGasMeter = async (req: AuthRequest, res: Response) => 
       return res.status(404).json({ success: false, error: 'Customer profile not found' });
     }
 
-    const existingMeter = await prisma.gasMeter.findFirst({
+    // Find ALL records with this meter number
+    const allMetersWithNumber = await prisma.gasMeter.findMany({
       where: { meterNumber: meter_number }
     });
 
-    if (existingMeter) {
-      if (existingMeter.status === 'active' && existingMeter.consumerId !== consumerProfile.id) {
-        return res.status(400).json({ success: false, error: 'Meter is already active and assigned to another customer.' });
-      }
-      
+    // Check if any OTHER customer currently has this meter as ACTIVE
+    const activeOnOtherCustomer = allMetersWithNumber.find(
+      m => m.status === 'active' && m.consumerId !== consumerProfile.id
+    );
+    if (activeOnOtherCustomer) {
+      return res.status(400).json({ success: false, error: 'Meter is already active and assigned to another customer.' });
+    }
+
+    // Check if THIS customer already has a record for this meter number (active or removed)
+    const existingForThisCustomer = allMetersWithNumber.find(
+      m => m.consumerId === consumerProfile.id
+    );
+
+    if (existingForThisCustomer) {
+      // Just reactivate their own existing record
       const updatedMeter = await prisma.gasMeter.update({
-        where: { id: existingMeter.id },
+        where: { id: existingForThisCustomer.id },
         data: {
-          consumerId: consumerProfile.id,
           status: 'active',
-          aliasName: alias_name || 'My Meter',
-          ownerName: owner_name || existingMeter.ownerName,
-          ownerPhone: owner_phone || existingMeter.ownerPhone
+          aliasName: alias_name || existingForThisCustomer.aliasName || 'My Meter',
+          ownerName: owner_name || existingForThisCustomer.ownerName,
+          ownerPhone: owner_phone || existingForThisCustomer.ownerPhone
         }
       });
       return res.json({ success: true, data: updatedMeter, message: 'Meter reassigned successfully' });
     }
 
+    // No record for this customer. Check if there's a removed record from another customer we can reuse
+    const removedFromOther = allMetersWithNumber.find(m => m.status === 'removed');
+    if (removedFromOther) {
+      // Reassign it to the new customer
+      const updatedMeter = await prisma.gasMeter.update({
+        where: { id: removedFromOther.id },
+        data: {
+          consumerId: consumerProfile.id,
+          status: 'active',
+          aliasName: alias_name || 'My Meter',
+          ownerName: owner_name || removedFromOther.ownerName,
+          ownerPhone: owner_phone || removedFromOther.ownerPhone
+        }
+      });
+      return res.json({ success: true, data: updatedMeter, message: 'Meter reassigned successfully' });
+    }
+
+    // No existing record at all — create a brand new one
     const newMeter = await prisma.gasMeter.create({
       data: {
         consumerId: consumerProfile.id,
