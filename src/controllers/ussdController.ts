@@ -1057,7 +1057,8 @@ export const handleUSSDRequestCore = async (req: Request, res: Response) => {
           }
 
           const saleItems = await prisma.saleItem.findMany({
-            where: { saleId: sale.id }
+            where: { saleId: sale.id },
+            include: { product: true }
           });
 
           // Deduct & update sale status to 'pending' (paid)
@@ -1100,6 +1101,57 @@ export const handleUSSDRequestCore = async (req: Request, res: Response) => {
                 where: { id: item.productId },
                 data: { stock: { decrement: item.quantity } }
               });
+            }
+
+            // Calculate and Grant Gas Reward (only for Dashboard Wallet)
+            if (walletTypeChoice === '1' && sale.notes) {
+              try {
+                const meta = JSON.parse(sale.notes);
+                const { gasRewardWalletId, rewardConsumerId, consumerId } = meta;
+                const targetRewardId = gasRewardWalletId;
+                const targetConsumerId = rewardConsumerId || consumerId || card.consumerId;
+
+                if (targetRewardId && targetConsumerId) {
+                  let totalProfit = 0;
+                  for (const item of saleItems) {
+                    if (item.product) {
+                      let sellingPrice = Number(item.price);
+                      if (item.product.taxType === 'B') {
+                        sellingPrice = sellingPrice / 1.18;
+                      }
+                      const costPrice = item.product.costPrice ? Number(item.product.costPrice) : 0;
+                      const profitPerItem = sellingPrice - costPrice;
+                      if (profitPerItem > 0) {
+                        totalProfit += profitPerItem * Number(item.quantity);
+                      }
+                    }
+                  }
+
+                  if (totalProfit > 0) {
+                    const config = await tx.systemConfig.findFirst();
+                    const gasPrice = config?.gasPricePerM3 || 6500;
+                    const gasRewardShare = config?.gasRewardShare !== undefined ? config.gasRewardShare / 100 : 0.12;
+                    const rewardAmountRWF = totalProfit * gasRewardShare;
+                    const rewardUnits = Number((rewardAmountRWF / gasPrice).toFixed(4));
+
+                    if (rewardUnits > 0) {
+                      await tx.gasReward.create({
+                        data: {
+                          consumerId: targetConsumerId,
+                          saleId: sale.id,
+                          meterId: targetRewardId,
+                          units: rewardUnits,
+                          profitAmount: totalProfit,
+                          source: 'purchase_reward',
+                          reference: `Reward for Sale #${sale.id}`
+                        }
+                      });
+                    }
+                  }
+                }
+              } catch (parseErr) {
+                console.error('Failed to process gas reward metadata in USSD Wallet payment:', parseErr);
+              }
             }
           });
 
