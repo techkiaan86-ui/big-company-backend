@@ -5397,27 +5397,27 @@ export const adminGetGasMeters = async (req: AuthRequest, res: Response) => {
           const rawStaticPaid = staticStats?.staticTotalPaid;
           
           // Apply same fallback logic for missing units on the customer level
-          const staticUnits = rawStaticUnits ? Number(rawStaticUnits) : (Number(rawStaticPaid || 0) / rate);
+          const staticUnits = rawStaticUnits ? Number(rawStaticUnits.toString()) : (Number(rawStaticPaid?.toString() || 0) / rate);
 
           profileWithStats = {
             ...cProfile,
             staticTotalUnits: staticUnits || 0,
-            staticTotalPaid: Number(rawStaticPaid) || 0
+            staticTotalPaid: Number(rawStaticPaid?.toString()) || 0
           };
         }
 
         const lifetimeTotalUnits = meter.gasTopups.reduce((sum, t) => {
-          const u = t.units ? Number(t.units) : Number(t.amount) / rate;
+          const u = t.units ? Number(t.units.toString()) : Number(t.amount?.toString() || 0) / rate;
           return sum + (u || 0);
         }, 0);
-        const lifetimeTotalPaid = meter.gasTopups.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+        const lifetimeTotalPaid = meter.gasTopups.reduce((sum, t) => sum + (Number(t.amount?.toString()) || 0), 0);
 
         return {
           ...meter,
           consumerProfile: profileWithStats,
           // Use currentUnits directly — same field the customer-facing view displays, ensures exact match
           totalUnits: meter.currentUnits,
-          totalPaid: currentMonthTopups.reduce((sum, t) => sum + (Number(t.amount) || 0), 0),
+          totalPaid: currentMonthTopups.reduce((sum, t) => sum + (Number(t.amount?.toString()) || 0), 0),
           lifetimeTotalUnits,
           lifetimeTotalPaid
         };
