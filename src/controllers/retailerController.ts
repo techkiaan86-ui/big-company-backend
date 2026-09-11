@@ -4284,18 +4284,17 @@ export const configureDraftOrder = async (req: AuthRequest, res: Response) => {
       console.error('Failed to parse sale notes for phone number:', e);
     }
 
-    // If retailer provided a Reward Wallet ID (customer's gas meter number),
-    // look up the gas meter to get gasRewardWalletId (meter DB id) and rewardConsumerId
+    // If retailer provided a Reward Wallet ID, look up the consumer whose gasRewardWalletId matches
     if (rewardWalletId) {
       try {
-        const gasMeter = await prisma.gasMeter.findFirst({
-          where: { meterNumber: String(rewardWalletId), status: 'active' }
+        const rewardConsumer = await prisma.consumerProfile.findFirst({
+          where: { gasRewardWalletId: String(rewardWalletId) }
         });
-        if (gasMeter) {
-          existingNotes.gasRewardWalletId = gasMeter.id;
-          existingNotes.rewardConsumerId = gasMeter.consumerId;
+        if (rewardConsumer) {
+          existingNotes.gasRewardWalletId = rewardWalletId;
+          existingNotes.rewardConsumerId = rewardConsumer.id;
         } else {
-          console.warn(`[ConfigureOrder] Reward Wallet ID "${rewardWalletId}" not found or inactive. Reward will be skipped.`);
+          console.warn(`[ConfigureOrder] Reward Wallet ID "${rewardWalletId}" did not match any consumer. Reward will be skipped.`);
         }
       } catch (rewardLookupErr) {
         console.error('[ConfigureOrder] Failed to look up reward wallet:', rewardLookupErr);

@@ -5353,8 +5353,9 @@ export const adminGetGasMeters = async (req: AuthRequest, res: Response) => {
         return {
           ...meter,
           consumerProfile: meter.consumerId ? (consumerMap.get(meter.consumerId) || null) : null,
-          totalUnits,
-          totalPaid
+          // Use currentUnits directly — same field the customer-facing view displays, ensures exact match
+          totalUnits: meter.currentUnits,
+          totalPaid: currentMonthTopups.reduce((sum, t) => sum + (t.amount || 0), 0)
         };
       });
 
@@ -5435,8 +5436,12 @@ export const adminUnlinkGasMeter = async (req: AuthRequest, res: Response) => {
     const meter = await prisma.gasMeter.findUnique({ where: { id: Number(id) } });
     if (!meter) return res.status(404).json({ success: false, error: 'Gas meter not found' });
 
-    await prisma.gasMeter.delete({
-      where: { id: Number(id) }
+    // Cannot hard-delete: GasTopup records are FK-linked to GasMeter (onDelete: NoAction)
+    // Setting status to 'removed' hides the meter from the admin list and frees the
+    // meter number to be freshly registered to a different customer (creating a new DB row).
+    await prisma.gasMeter.update({
+      where: { id: Number(id) },
+      data: { status: 'removed' }
     });
 
     res.json({ success: true, message: 'Gas meter unlinked successfully' });
