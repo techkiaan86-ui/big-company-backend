@@ -5388,12 +5388,17 @@ export const adminGetGasMeters = async (req: AuthRequest, res: Response) => {
           };
         }
 
+        const lifetimeTotalUnits = meter.gasTopups.reduce((sum, t) => sum + (t.units || 0), 0);
+        const lifetimeTotalPaid = meter.gasTopups.reduce((sum, t) => sum + (t.amount || 0), 0);
+
         return {
           ...meter,
           consumerProfile: profileWithStats,
           // Use currentUnits directly — same field the customer-facing view displays, ensures exact match
           totalUnits: meter.currentUnits,
-          totalPaid: currentMonthTopups.reduce((sum, t) => sum + (t.amount || 0), 0)
+          totalPaid: currentMonthTopups.reduce((sum, t) => sum + (t.amount || 0), 0),
+          lifetimeTotalUnits,
+          lifetimeTotalPaid
         };
       });
 
