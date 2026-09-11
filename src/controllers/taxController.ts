@@ -11,6 +11,9 @@ const calculateItemTax = (unitPrice: number, quantity: number, taxType: string |
   return totalTax * quantity;
 };
 
+// RETAILER TAX VIEW
+// Only shows the retailer's own sales to consumers.
+// Purchase orders (retailer → wholesaler) are NOT shown here — those taxes belong to the wholesaler.
 export const getRetailerTaxes = async (req: any, res: Response) => {
   try {
     const retailerId = Number(req.user.id);
@@ -22,7 +25,7 @@ export const getRetailerTaxes = async (req: any, res: Response) => {
 
     const dateFilter = retailer.lastSettlementDate ? { gte: retailer.lastSettlementDate } : undefined;
 
-    // Retailer's sales to consumers — include 'pending' for USSD orders
+    // Only retailer's sales to consumers — include 'pending' for USSD orders
     const sales = await prisma.sale.findMany({
       where: {
         retailerId: retailer.id,
@@ -36,24 +39,9 @@ export const getRetailerTaxes = async (req: any, res: Response) => {
       orderBy: { createdAt: 'desc' }
     });
 
-    // Retailer's purchase orders from wholesalers
-    const purchaseOrders = await prisma.order.findMany({
-      where: {
-        retailerId: retailer.id,
-        status: { in: ['completed', 'approved', 'delivered'] },
-        ...(dateFilter && { createdAt: dateFilter })
-      },
-      include: {
-        orderItems: { include: { product: true } },
-        wholesalerProfile: true
-      },
-      orderBy: { createdAt: 'desc' }
-    });
-
     let totalTax = 0;
     const history: any[] = [];
 
-    // Process sales tax
     sales.forEach(sale => {
       let saleTax = 0;
       sale.saleItems.forEach(item => {
@@ -72,31 +60,12 @@ export const getRetailerTaxes = async (req: any, res: Response) => {
       });
     });
 
-    // Process purchase orders tax
-    purchaseOrders.forEach(order => {
-      let orderTax = 0;
-      order.orderItems.forEach(item => {
-        const tType = item.product ? (item.product as any).taxType : 'A';
-        orderTax += calculateItemTax(item.price, item.quantity, tType);
-      });
-      totalTax += orderTax;
-
-      history.push({
-        id: `ORD-${order.id}`,
-        customerName: order.wholesalerProfile?.companyName || 'Unknown Wholesaler',
-        orderAmount: order.totalAmount,
-        taxPaid: Math.round(orderTax * 100) / 100,
-        type: 'Purchase Order',
-        createdAt: order.createdAt
-      });
-    });
-
     history.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     res.json({
       success: true,
       data: {
-        totalOrders: sales.length + purchaseOrders.length,
+        totalOrders: sales.length,
         totalTax: Math.round(totalTax * 100) / 100,
         history
       }
@@ -169,7 +138,6 @@ export const getWholesalerTaxes = async (req: any, res: Response) => {
 export const getAdminTaxes = async (req: any, res: Response) => {
   try {
     // Fetch all retailers and wholesalers with their settlement dates
-    // so Admin detail views use the same date filter as each account's own view
     const allRetailers = await prisma.retailerProfile.findMany({
       select: { id: true, shopName: true, lastSettlementDate: true }
     });
@@ -195,15 +163,17 @@ export const getAdminTaxes = async (req: any, res: Response) => {
     });
 
     let globalTotalTax = 0;
-    
+    let globalTotalOrders = 0;
+
+    // RETAILER detail: only their sales to consumers (same as the retailer's own view)
     const retailersMap = new Map<number, any>();
     sales.forEach(sale => {
       const rId = sale.retailerId;
       const retailerInfo = retailerSettlementMap.get(rId);
 
-      // Apply same settlement date filter the retailer themselves sees
+      // Apply the same settlement date filter the retailer sees
       if (retailerInfo?.lastSettlementDate && sale.createdAt < retailerInfo.lastSettlementDate) {
-        return; // skip — before retailer's settlement period
+        return;
       }
 
       let saleTax = 0;
@@ -212,7 +182,8 @@ export const getAdminTaxes = async (req: any, res: Response) => {
         saleTax += calculateItemTax(item.price, item.quantity, tType);
       });
       globalTotalTax += saleTax;
-      
+      globalTotalOrders += 1;
+
       if (!retailersMap.has(rId)) {
           retailersMap.set(rId, {
               id: rId,
@@ -222,7 +193,7 @@ export const getAdminTaxes = async (req: any, res: Response) => {
               history: []
           });
       }
-      
+
       const retailerData = retailersMap.get(rId);
       retailerData.totalOrders += 1;
       retailerData.totalTax += saleTax;
@@ -235,6 +206,8 @@ export const getAdminTaxes = async (req: any, res: Response) => {
       });
     });
 
+    // WHOLESALER detail: their orders received from retailers
+    // Purchase orders are NOT added to the retailer's detail — they belong here only.
     const wholesalersMap = new Map<number, any>();
     orders.forEach(order => {
       const wId = order.wholesalerId;
@@ -242,71 +215,38 @@ export const getAdminTaxes = async (req: any, res: Response) => {
 
       const wholesalerInfo = wholesalerSettlementMap.get(wId);
 
-      // Apply same settlement date filter the wholesaler themselves sees
-      const skipForWholesaler = wholesalerInfo?.lastSettlementDate && order.createdAt < wholesalerInfo.lastSettlementDate;
+      if (wholesalerInfo?.lastSettlementDate && order.createdAt < wholesalerInfo.lastSettlementDate) {
+        return;
+      }
 
       let orderTax = 0;
       order.orderItems.forEach(item => {
         const tType = item.product ? (item.product as any).taxType : 'A';
         orderTax += calculateItemTax(item.price, item.quantity, tType);
       });
-      
-      // Only add to global tax if we're not skipping it for the wholesaler (since they are the primary collector)
-      // Actually, admin view needs all current period taxes, but globalTotalTax was just a simple sum.
-      if (!skipForWholesaler) {
-        globalTotalTax += orderTax;
+      globalTotalTax += orderTax;
+      globalTotalOrders += 1;
 
-        if (!wholesalersMap.has(wId)) {
-            wholesalersMap.set(wId, {
-                id: wId,
-                name: wholesalerInfo?.companyName || 'Unknown Wholesaler',
-                totalOrders: 0,
-                totalTax: 0,
-                history: []
-            });
-        }
-
-        const wholesalerData = wholesalersMap.get(wId);
-        wholesalerData.totalOrders += 1;
-        wholesalerData.totalTax += orderTax;
-        wholesalerData.history.push({
-          id: `ORD-${order.id}`,
-          customerName: order.retailerProfile?.shopName || 'Unknown Retailer',
-          orderAmount: order.totalAmount,
-          taxPaid: Math.round(orderTax * 100) / 100,
-          createdAt: order.createdAt
-        });
-      }
-
-      // Add to Retailer's history as well!
-      const rId = order.retailerId;
-      if (rId) {
-        const retailerInfo = retailerSettlementMap.get(rId);
-        const skipForRetailer = retailerInfo?.lastSettlementDate && order.createdAt < retailerInfo.lastSettlementDate;
-        
-        if (!skipForRetailer) {
-          if (!retailersMap.has(rId)) {
-              retailersMap.set(rId, {
-                  id: rId,
-                  name: retailerInfo?.shopName || 'Unknown Retailer',
-                  totalOrders: 0,
-                  totalTax: 0,
-                  history: []
-              });
-          }
-          
-          const retailerData = retailersMap.get(rId);
-          retailerData.totalOrders += 1;
-          retailerData.totalTax += orderTax;
-          retailerData.history.push({
-            id: `ORD-${order.id}`,
-            customerName: wholesalerInfo?.companyName || 'Unknown Wholesaler',
-            orderAmount: order.totalAmount,
-            taxPaid: Math.round(orderTax * 100) / 100,
-            createdAt: order.createdAt
+      if (!wholesalersMap.has(wId)) {
+          wholesalersMap.set(wId, {
+              id: wId,
+              name: wholesalerInfo?.companyName || 'Unknown Wholesaler',
+              totalOrders: 0,
+              totalTax: 0,
+              history: []
           });
-        }
       }
+
+      const wholesalerData = wholesalersMap.get(wId);
+      wholesalerData.totalOrders += 1;
+      wholesalerData.totalTax += orderTax;
+      wholesalerData.history.push({
+        id: `ORD-${order.id}`,
+        customerName: order.retailerProfile?.shopName || 'Unknown Retailer',
+        orderAmount: order.totalAmount,
+        taxPaid: Math.round(orderTax * 100) / 100,
+        createdAt: order.createdAt
+      });
     });
 
     const retailers = Array.from(retailersMap.values()).map(r => ({
@@ -314,7 +254,7 @@ export const getAdminTaxes = async (req: any, res: Response) => {
         totalTax: Math.round(r.totalTax * 100) / 100,
         history: r.history.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     }));
-    
+
     const wholesalers = Array.from(wholesalersMap.values()).map(w => ({
         ...w,
         totalTax: Math.round(w.totalTax * 100) / 100,
@@ -324,7 +264,8 @@ export const getAdminTaxes = async (req: any, res: Response) => {
     res.json({
       success: true,
       data: {
-        totalOrders: sales.length + orders.length,
+        // Use filtered per-account count so the global total matches the sum of all individual rows
+        totalOrders: globalTotalOrders,
         totalTax: Math.round(globalTotalTax * 100) / 100,
         retailers,
         wholesalers

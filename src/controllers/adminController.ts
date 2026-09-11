@@ -5212,7 +5212,11 @@ export const getProfitInvoiceStats = async (req: AuthRequest, res: Response) => 
             : item.price / (1 + retailerMarkup / 100);
           totalCost += (cost * item.quantity);
 
-          // Tax calculation is explicitly 0 for Retailers per client business logic
+          // Calculate actual tax from sale items
+          const tType = (item.product as any)?.taxType || 'A';
+          const cleanTaxType = tType || 'A';
+          const { totalTax: itemTax } = reverseVATCalculation(item.price, cleanTaxType);
+          tax += itemTax * item.quantity;
         }
       }
 
