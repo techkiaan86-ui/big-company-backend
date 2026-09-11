@@ -5325,10 +5325,24 @@ export const endGasPeriod = async (req: AuthRequest, res: Response) => {
 
 export const adminGetGasMeters = async (req: AuthRequest, res: Response) => {
   try {
+    // Fetch global lastGasResetDate
+    const resetAlert = await prisma.systemAlert.findFirst({
+      where: { apiName: 'GAS_REPORTING_PERIOD_RESET' },
+      orderBy: { createdAt: 'desc' }
+    });
+    const lastGasResetDate = resetAlert ? new Date(resetAlert.errorMessage) : null;
+
     // Only fetch ACTIVE meters — removed/unlinked meters are hidden (client requirement)
     const meters = await prisma.gasMeter.findMany({
       where: { status: { not: 'removed' } },
-      include: { gasTopups: true }
+      include: { 
+        gasTopups: {
+          where: { 
+            status: 'completed',
+            ...(lastGasResetDate ? { createdAt: { gte: lastGasResetDate } } : {})
+          }
+        }
+      }
     });
 
     // Fetch all consumer profiles separately (safe — no FK constraint issue)
@@ -5338,13 +5352,6 @@ export const adminGetGasMeters = async (req: AuthRequest, res: Response) => {
       include: { user: true }
     });
     const consumerMap = new Map(consumers.map(c => [c.id, c]));
-
-    // Fetch global lastGasResetDate
-    const resetAlert = await prisma.systemAlert.findFirst({
-      where: { apiName: 'GAS_REPORTING_PERIOD_RESET' },
-      orderBy: { createdAt: 'desc' }
-    });
-    const lastGasResetDate = resetAlert ? new Date(resetAlert.errorMessage) : null;
 
     // Calculate actual static stats per customer based on Top-ups
     const customerStats = await prisma.gasTopup.groupBy({

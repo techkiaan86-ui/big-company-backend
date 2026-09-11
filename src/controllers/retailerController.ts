@@ -1092,9 +1092,6 @@ export const createSale = async (req: AuthRequest, res: Response) => {
       }
 
 
-      const { gasRewardWalletId, gas_meter_id } = req.body;
-      const targetRewardId = gasRewardWalletId || gas_meter_id;
-
       // --- Handle PalmKash (Mobile Money) ---
       let externalRef = null;
       if (payment_method === 'mobile_money' || payment_method === 'momo' || payment_method === 'mtn' || payment_method === 'airtel' || payment_method === 'airtel' || payment_method === 'airtel') {
@@ -1120,6 +1117,24 @@ export const createSale = async (req: AuthRequest, res: Response) => {
           where: { user: { phone: customer_phone as string } }
         });
         if (consumer) consumerId = consumer.id;
+      }
+
+      // --- Auto-Resolve Reward Wallet ID ---
+      const { gasRewardWalletId, gas_meter_id } = req.body;
+      let targetRewardId = gasRewardWalletId || gas_meter_id;
+
+      // Auto-fallback: if targetRewardId is missing but we know the consumer, get their default gasRewardWalletId
+      if (!targetRewardId && consumerId) {
+        const fallbackConsumer = await prisma.consumerProfile.findUnique({
+          where: { id: consumerId }
+        });
+        if (fallbackConsumer?.gasRewardWalletId) {
+          targetRewardId = fallbackConsumer.gasRewardWalletId;
+          // Also set rewardConsumerId if it wasn't set earlier
+          if (!rewardConsumerId) {
+            rewardConsumerId = consumerId;
+          }
+        }
       }
 
       // Create Sale Record

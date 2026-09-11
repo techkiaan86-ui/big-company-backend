@@ -518,6 +518,7 @@ export const getGasUsage = async (req: AuthRequest, res: Response) => {
 
         const where: any = { 
             consumerId: consumerProfile.id,
+            status: 'completed',
             ...(lastGasResetDate ? { createdAt: { gte: lastGasResetDate } } : {})
         };
         if (meter_id) {
