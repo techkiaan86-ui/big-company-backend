@@ -5372,6 +5372,10 @@ export const adminGetGasMeters = async (req: AuthRequest, res: Response) => {
       }
     ]));
 
+    // Fetch config for fallback gas rate
+    const config = await prisma.systemConfig.findFirst();
+    const rate = config?.gasPricePerM3 || 1500;
+
     const metersWithMetrics = meters
       // Filter out meters whose customer account has been deleted (orphaned consumerId)
       .filter(meter => !meter.consumerId || consumerMap.has(meter.consumerId))
@@ -5388,22 +5392,32 @@ export const adminGetGasMeters = async (req: AuthRequest, res: Response) => {
         const cProfile = meter.consumerId ? consumerMap.get(meter.consumerId) : null;
         let profileWithStats = null;
         if (cProfile) {
+          const staticStats = staticStatsMap.get(cProfile.id);
+          const rawStaticUnits = staticStats?.staticTotalUnits;
+          const rawStaticPaid = staticStats?.staticTotalPaid;
+          
+          // Apply same fallback logic for missing units on the customer level
+          const staticUnits = rawStaticUnits ? Number(rawStaticUnits) : (Number(rawStaticPaid || 0) / rate);
+
           profileWithStats = {
             ...cProfile,
-            staticTotalUnits: staticStatsMap.get(cProfile.id)?.staticTotalUnits || 0,
-            staticTotalPaid: staticStatsMap.get(cProfile.id)?.staticTotalPaid || 0
+            staticTotalUnits: staticUnits || 0,
+            staticTotalPaid: Number(rawStaticPaid) || 0
           };
         }
 
-        const lifetimeTotalUnits = meter.gasTopups.reduce((sum, t) => sum + (t.units || 0), 0);
-        const lifetimeTotalPaid = meter.gasTopups.reduce((sum, t) => sum + (t.amount || 0), 0);
+        const lifetimeTotalUnits = meter.gasTopups.reduce((sum, t) => {
+          const u = t.units ? Number(t.units) : Number(t.amount) / rate;
+          return sum + (u || 0);
+        }, 0);
+        const lifetimeTotalPaid = meter.gasTopups.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
         return {
           ...meter,
           consumerProfile: profileWithStats,
           // Use currentUnits directly — same field the customer-facing view displays, ensures exact match
           totalUnits: meter.currentUnits,
-          totalPaid: currentMonthTopups.reduce((sum, t) => sum + (t.amount || 0), 0),
+          totalPaid: currentMonthTopups.reduce((sum, t) => sum + (Number(t.amount) || 0), 0),
           lifetimeTotalUnits,
           lifetimeTotalPaid
         };
