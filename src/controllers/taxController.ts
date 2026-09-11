@@ -5,8 +5,9 @@ import { reverseVATCalculation } from '../utils/pricingReversalUtils';
 const prisma = new PrismaClient();
 
 // Helper to calculate tax for an item
+// Falls back to 'B' (18% VAT) when taxType is unknown — matches the schema default
 const calculateItemTax = (unitPrice: number, quantity: number, taxType: string | null): number => {
-  const cleanTaxType = taxType || 'A'; // Default to 0% (Type A) for unknown/deleted products
+  const cleanTaxType = taxType || 'A'; // Default to 0% (Type A) — deleted products: tax unknown, safer to show 0
   const { totalTax } = reverseVATCalculation(unitPrice, cleanTaxType);
   return totalTax * quantity;
 };
@@ -22,11 +23,11 @@ export const getRetailerTaxes = async (req: any, res: Response) => {
 
     const dateFilter = retailer.lastSettlementDate ? { gte: retailer.lastSettlementDate } : undefined;
 
-    // Retailer's sales to consumers
+    // Retailer's sales to consumers — include 'pending' for USSD orders
     const sales = await prisma.sale.findMany({
       where: {
         retailerId: retailer.id,
-        status: { in: ['completed', 'pending_payment'] },
+        status: { in: ['completed', 'pending_payment', 'pending'] },
         ...(dateFilter && { createdAt: dateFilter })
       },
       include: {
@@ -36,7 +37,7 @@ export const getRetailerTaxes = async (req: any, res: Response) => {
       orderBy: { createdAt: 'desc' }
     });
 
-    // Retailer's purchase orders from wholesalers (the "manufacturing/replace orders" the client mentioned)
+    // Retailer's purchase orders from wholesalers
     const purchaseOrders = await prisma.order.findMany({
       where: {
         retailerId: retailer.id,
@@ -168,38 +169,44 @@ export const getWholesalerTaxes = async (req: any, res: Response) => {
 
 export const getAdminTaxes = async (req: any, res: Response) => {
   try {
+    // Fetch all retailers and wholesalers with their settlement dates
+    // so Admin detail views use the same date filter as each account's own view
+    const allRetailers = await prisma.retailerProfile.findMany({
+      select: { id: true, shopName: true, lastSettlementDate: true }
+    });
+    const allWholesalers = await prisma.wholesalerProfile.findMany({
+      select: { id: true, companyName: true, lastSettlementDate: true }
+    });
+
+    const retailerSettlementMap = new Map(allRetailers.map(r => [r.id, r]));
+    const wholesalerSettlementMap = new Map(allWholesalers.map(w => [w.id, w]));
+
     const sales = await prisma.sale.findMany({
-      where: { status: { in: ['completed', 'pending_payment'] } },
+      where: { status: { in: ['completed', 'pending_payment', 'pending'] } },
       include: { saleItems: { include: { product: true } }, consumerProfile: true },
       orderBy: { createdAt: 'desc' },
-      take: 500 // Limit for safety
+      take: 1000
     });
 
     const orders = await prisma.order.findMany({
       where: { status: { in: ['completed', 'approved', 'delivered'] } },
-      include: { orderItems: { include: { product: true } } },
+      include: { orderItems: { include: { product: true } }, retailerProfile: true },
       orderBy: { createdAt: 'desc' },
-      take: 500 // Limit for safety
+      take: 1000
     });
-
-    // Manually fetch profiles to avoid Prisma crashing on deleted relations
-    const retailerIds = [...new Set([...sales.map(s => s.retailerId), ...orders.map(o => o.retailerId)].filter(Boolean))];
-    const wholesalerIds = [...new Set(orders.map(o => o.wholesalerId).filter(Boolean))];
-
-    const retailersData = await prisma.retailerProfile.findMany({
-      where: { id: { in: retailerIds } }
-    });
-    const wholesalersData = await prisma.wholesalerProfile.findMany({
-      where: { id: { in: wholesalerIds } }
-    });
-
-    const retailerMapDb = new Map(retailersData.map(r => [r.id, r]));
-    const wholesalerMapDb = new Map(wholesalersData.map(w => [w.id, w]));
 
     let globalTotalTax = 0;
     
     const retailersMap = new Map<number, any>();
     sales.forEach(sale => {
+      const rId = sale.retailerId;
+      const retailerInfo = retailerSettlementMap.get(rId);
+
+      // Apply same settlement date filter the retailer themselves sees
+      if (retailerInfo?.lastSettlementDate && sale.createdAt < retailerInfo.lastSettlementDate) {
+        return; // skip — before retailer's settlement period
+      }
+
       let saleTax = 0;
       sale.saleItems.forEach(item => {
         const tType = item.product ? (item.product as any).taxType : 'A';
@@ -207,11 +214,10 @@ export const getAdminTaxes = async (req: any, res: Response) => {
       });
       globalTotalTax += saleTax;
       
-      const rId = sale.retailerId;
       if (!retailersMap.has(rId)) {
           retailersMap.set(rId, {
               id: rId,
-              name: retailerMapDb.get(rId)?.shopName || 'Unknown Retailer',
+              name: retailerInfo?.shopName || 'Unknown Retailer',
               totalOrders: 0,
               totalTax: 0,
               history: []
@@ -232,6 +238,16 @@ export const getAdminTaxes = async (req: any, res: Response) => {
 
     const wholesalersMap = new Map<number, any>();
     orders.forEach(order => {
+      const wId = order.wholesalerId;
+      if (!wId) return;
+
+      const wholesalerInfo = wholesalerSettlementMap.get(wId);
+
+      // Apply same settlement date filter the wholesaler themselves sees
+      if (wholesalerInfo?.lastSettlementDate && order.createdAt < wholesalerInfo.lastSettlementDate) {
+        return; // skip — before wholesaler's settlement period
+      }
+
       let orderTax = 0;
       order.orderItems.forEach(item => {
         const tType = item.product ? (item.product as any).taxType : 'A';
@@ -239,12 +255,10 @@ export const getAdminTaxes = async (req: any, res: Response) => {
       });
       globalTotalTax += orderTax;
 
-      const wId = order.wholesalerId;
-      if (!wId) return; // skip orders not linked to a wholesaler
       if (!wholesalersMap.has(wId)) {
           wholesalersMap.set(wId, {
               id: wId,
-              name: wholesalerMapDb.get(wId)?.companyName || 'Unknown Wholesaler',
+              name: wholesalerInfo?.companyName || 'Unknown Wholesaler',
               totalOrders: 0,
               totalTax: 0,
               history: []
@@ -256,7 +270,7 @@ export const getAdminTaxes = async (req: any, res: Response) => {
       wholesalerData.totalTax += orderTax;
       wholesalerData.history.push({
         id: `ORD-${order.id}`,
-        customerName: retailerMapDb.get(order.retailerId)?.shopName || 'Unknown Retailer (Wholesale)',
+        customerName: order.retailerProfile?.shopName || 'Unknown Retailer',
         orderAmount: order.totalAmount,
         taxPaid: Math.round(orderTax * 100) / 100,
         createdAt: order.createdAt
