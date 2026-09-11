@@ -406,7 +406,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
           paymentMethod: paymentMethod,
           // Store external PalmKash reference or legacy meterId
           meterId: (externalRef || meterId || null) as string,
-          notes: isUssdCallback ? JSON.stringify({ retailer_email }) : (isMobileMoney ? JSON.stringify({ gasRewardWalletId: targetRewardId, rewardConsumerId: rewardConsumerId }) : null),
+          notes: isUssdCallback ? JSON.stringify({ retailer_email, gasRewardWalletId: targetRewardId, rewardConsumerId: rewardConsumerId }) : (isMobileMoney ? JSON.stringify({ gasRewardWalletId: targetRewardId, rewardConsumerId: rewardConsumerId }) : null),
           saleItems: {
             create: items && items.length > 0 ? items.map((item: any) => ({
               productId: item.productId,
