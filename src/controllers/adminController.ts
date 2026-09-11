@@ -2616,9 +2616,8 @@ export const adminUnlinkCard = async (req: AuthRequest, res: Response) => {
     const card = await prisma.nfcCard.findUnique({ where: { id: Number(id) } });
     if (!card) return res.status(404).json({ success: false, error: 'Card not found' });
     
-    await prisma.nfcCard.update({
-      where: { id: Number(id) },
-      data: { consumerId: null, status: 'available' }
+    await prisma.nfcCard.delete({
+      where: { id: Number(id) }
     });
     
     res.json({ success: true, message: 'Card unlinked successfully' });
@@ -2740,13 +2739,8 @@ export const activateNFCCard = async (req: AuthRequest, res: Response) => {
 export const unlinkNFCCard = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const card = await prisma.nfcCard.update({
-      where: { id: Number(id) },
-      data: {
-        consumerId: null,
-        retailerId: null,
-        status: 'available' // Reset to available upon unlink
-      }
+    const card = await prisma.nfcCard.delete({
+      where: { id: Number(id) }
     });
     res.json({ success: true, card });
   } catch (error: any) {

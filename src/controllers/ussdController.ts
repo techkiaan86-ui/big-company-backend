@@ -30,13 +30,19 @@ async function findNfcCard(cardNumInput: string) {
 
   // 1. Direct search by uid (exactly as is)
   let card = await prisma.nfcCard.findFirst({
-    where: { uid: cardNumInput.trim() }
+    where: {
+      OR: [
+        { uid: cardNumInput.trim() },
+        { cardNumber: cardNumInput.trim() }
+      ]
+    }
   });
   if (card) return card;
 
   // 2. Query all cards and find by cleaned/friendly match
   const cards = await prisma.nfcCard.findMany();
   card = cards.find(c => {
+    if (c.cardNumber && c.cardNumber.trim() === cleaned) return true;
     const dbCleaned = c.uid.replace(/[\s:]/g, '').toUpperCase();
     if (dbCleaned === cleaned) return true;
     if (cleaned.startsWith('NFC-')) {
