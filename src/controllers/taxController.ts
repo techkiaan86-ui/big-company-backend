@@ -171,6 +171,9 @@ export const getAdminTaxes = async (req: any, res: Response) => {
       const rId = sale.retailerId;
       const retailerInfo = retailerSettlementMap.get(rId);
 
+      // Skip sales with no valid/known retailer profile — avoids "Unknown Retailer" ghost rows
+      if (!retailerInfo) return;
+
       // Apply the same settlement date filter the retailer sees
       if (retailerInfo?.lastSettlementDate && sale.createdAt < retailerInfo.lastSettlementDate) {
         return;
