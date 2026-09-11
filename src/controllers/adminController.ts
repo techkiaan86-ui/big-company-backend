@@ -5339,6 +5339,32 @@ export const adminGetGasMeters = async (req: AuthRequest, res: Response) => {
     });
     const consumerMap = new Map(consumers.map(c => [c.id, c]));
 
+    // Fetch global lastGasResetDate
+    const resetAlert = await prisma.systemAlert.findFirst({
+      where: { apiName: 'GAS_REPORTING_PERIOD_RESET' },
+      orderBy: { createdAt: 'desc' }
+    });
+    const lastGasResetDate = resetAlert ? new Date(resetAlert.errorMessage) : null;
+
+    // Calculate actual static stats per customer based on Top-ups
+    const customerStats = await prisma.gasTopup.groupBy({
+      by: ['consumerId'],
+      where: {
+        consumerId: { in: consumerIds },
+        status: { in: ['completed', 'success'] },
+        ...(lastGasResetDate ? { createdAt: { gte: lastGasResetDate } } : {})
+      },
+      _sum: { amount: true, units: true }
+    });
+
+    const staticStatsMap = new Map(customerStats.map(stat => [
+      stat.consumerId,
+      {
+        staticTotalUnits: stat._sum.units || 0,
+        staticTotalPaid: stat._sum.amount || 0
+      }
+    ]));
+
     const metersWithMetrics = meters
       // Filter out meters whose customer account has been deleted (orphaned consumerId)
       .filter(meter => !meter.consumerId || consumerMap.has(meter.consumerId))
@@ -5352,11 +5378,19 @@ export const adminGetGasMeters = async (req: AuthRequest, res: Response) => {
           return tDate.getMonth() === currentMonth && tDate.getFullYear() === currentYear;
         });
 
-        const totalUnits = currentMonthTopups.reduce((sum, t) => sum + (t.units || 0), 0);
-        const totalPaid = currentMonthTopups.reduce((sum, t) => sum + (t.amount || 0), 0);
+        const cProfile = meter.consumerId ? consumerMap.get(meter.consumerId) : null;
+        let profileWithStats = null;
+        if (cProfile) {
+          profileWithStats = {
+            ...cProfile,
+            staticTotalUnits: staticStatsMap.get(cProfile.id)?.staticTotalUnits || 0,
+            staticTotalPaid: staticStatsMap.get(cProfile.id)?.staticTotalPaid || 0
+          };
+        }
+
         return {
           ...meter,
-          consumerProfile: meter.consumerId ? (consumerMap.get(meter.consumerId) || null) : null,
+          consumerProfile: profileWithStats,
           // Use currentUnits directly — same field the customer-facing view displays, ensures exact match
           totalUnits: meter.currentUnits,
           totalPaid: currentMonthTopups.reduce((sum, t) => sum + (t.amount || 0), 0)
@@ -5445,7 +5479,7 @@ export const adminUnlinkGasMeter = async (req: AuthRequest, res: Response) => {
     // meter number to be freshly registered to a different customer (creating a new DB row).
     await prisma.gasMeter.update({
       where: { id: Number(id) },
-      data: { status: 'removed' }
+      data: { status: 'removed', currentUnits: 0 }
     });
 
     res.json({ success: true, message: 'Gas meter unlinked successfully' });
