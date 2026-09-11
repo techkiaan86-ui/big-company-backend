@@ -5354,27 +5354,31 @@ export const adminGetGasMeters = async (req: AuthRequest, res: Response) => {
     const consumerMap = new Map(consumers.map(c => [c.id, c]));
 
     // Calculate actual static stats per customer based on Top-ups
-    const customerStats = await prisma.gasTopup.groupBy({
-      by: ['consumerId'],
+    const allConsumerTopups = await prisma.gasTopup.findMany({
       where: {
         consumerId: { in: consumerIds },
         status: { in: ['completed', 'success'] },
         ...(lastGasResetDate ? { createdAt: { gte: lastGasResetDate } } : {})
       },
-      _sum: { amount: true, units: true }
-    });
-
-    const staticStatsMap = new Map(customerStats.map(stat => [
-      stat.consumerId,
-      {
-        staticTotalUnits: stat._sum.units || 0,
-        staticTotalPaid: stat._sum.amount || 0
+      include: {
+        gasMeter: { select: { meterNumber: true } }
       }
-    ]));
+    });
 
     // Fetch config for fallback gas rate
     const config = await prisma.systemConfig.findFirst();
     const rate = config?.gasPricePerM3 || 1500;
+
+    const staticStatsMap = new Map();
+    for (const t of allConsumerTopups) {
+      if (!staticStatsMap.has(t.consumerId)) {
+        staticStatsMap.set(t.consumerId, { staticTotalUnits: 0, staticTotalPaid: 0 });
+      }
+      const stats = staticStatsMap.get(t.consumerId);
+      const u = t.units ? Number(t.units.toString()) : Number(t.amount?.toString() || 0) / rate;
+      stats.staticTotalUnits += (u || 0);
+      stats.staticTotalPaid += (Number(t.amount?.toString()) || 0);
+    }
 
     const metersWithMetrics = meters
       // Filter out meters whose customer account has been deleted (orphaned consumerId)
@@ -5384,7 +5388,13 @@ export const adminGetGasMeters = async (req: AuthRequest, res: Response) => {
         const currentMonth = now.getMonth();
         const currentYear = now.getFullYear();
 
-        const currentMonthTopups = meter.gasTopups.filter(t => {
+        // Get all topups for this consumer AND this meter number (matching history logic)
+        const meterHistoryTopups = allConsumerTopups.filter(t => 
+          t.consumerId === meter.consumerId && 
+          t.gasMeter?.meterNumber === meter.meterNumber
+        );
+
+        const currentMonthTopups = meterHistoryTopups.filter(t => {
           const tDate = new Date(t.createdAt);
           return tDate.getMonth() === currentMonth && tDate.getFullYear() === currentYear;
         });
@@ -5393,24 +5403,18 @@ export const adminGetGasMeters = async (req: AuthRequest, res: Response) => {
         let profileWithStats = null;
         if (cProfile) {
           const staticStats = staticStatsMap.get(cProfile.id);
-          const rawStaticUnits = staticStats?.staticTotalUnits;
-          const rawStaticPaid = staticStats?.staticTotalPaid;
-          
-          // Apply same fallback logic for missing units on the customer level
-          const staticUnits = rawStaticUnits ? Number(rawStaticUnits.toString()) : (Number(rawStaticPaid?.toString() || 0) / rate);
-
           profileWithStats = {
             ...cProfile,
-            staticTotalUnits: staticUnits || 0,
-            staticTotalPaid: Number(rawStaticPaid?.toString()) || 0
+            staticTotalUnits: staticStats?.staticTotalUnits || 0,
+            staticTotalPaid: staticStats?.staticTotalPaid || 0
           };
         }
 
-        const lifetimeTotalUnits = meter.gasTopups.reduce((sum, t) => {
+        const lifetimeTotalUnits = meterHistoryTopups.reduce((sum, t) => {
           const u = t.units ? Number(t.units.toString()) : Number(t.amount?.toString() || 0) / rate;
           return sum + (u || 0);
         }, 0);
-        const lifetimeTotalPaid = meter.gasTopups.reduce((sum, t) => sum + (Number(t.amount?.toString()) || 0), 0);
+        const lifetimeTotalPaid = meterHistoryTopups.reduce((sum, t) => sum + (Number(t.amount?.toString()) || 0), 0);
 
         return {
           ...meter,
