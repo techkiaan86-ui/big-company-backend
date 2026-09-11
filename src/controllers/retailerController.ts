@@ -989,7 +989,14 @@ export const createSale = async (req: AuthRequest, res: Response) => {
       // --- Handle NFC Payment (Unified Dashboard + Credit) ---
       if (payment_method === 'nfc') {
         const { uid, pin } = payment_details || {};
-        const card = await prisma.nfcCard.findUnique({ where: { uid } });
+        const card = await prisma.nfcCard.findFirst({ 
+          where: { 
+            OR: [
+              { uid: uid },
+              { cardNumber: uid }
+            ]
+          } 
+        });
 
         if (!card) throw new Error('NFC Card not found');
         if (card.status !== 'active') throw new Error('NFC Card is not active');
