@@ -5339,8 +5339,17 @@ export const adminGetGasMeters = async (req: AuthRequest, res: Response) => {
       // Filter out meters whose customer account has been deleted (orphaned consumerId)
       .filter(meter => !meter.consumerId || consumerMap.has(meter.consumerId))
       .map(meter => {
-        const totalUnits = meter.gasTopups.reduce((sum, t) => sum + (t.units || 0), 0);
-        const totalPaid = meter.gasTopups.reduce((sum, t) => sum + (t.amount || 0), 0);
+        const now = new Date();
+        const currentMonth = now.getMonth();
+        const currentYear = now.getFullYear();
+
+        const currentMonthTopups = meter.gasTopups.filter(t => {
+          const tDate = new Date(t.createdAt);
+          return tDate.getMonth() === currentMonth && tDate.getFullYear() === currentYear;
+        });
+
+        const totalUnits = currentMonthTopups.reduce((sum, t) => sum + (t.units || 0), 0);
+        const totalPaid = currentMonthTopups.reduce((sum, t) => sum + (t.amount || 0), 0);
         return {
           ...meter,
           consumerProfile: meter.consumerId ? (consumerMap.get(meter.consumerId) || null) : null,
@@ -5400,22 +5409,6 @@ export const adminRegisterGasMeter = async (req: AuthRequest, res: Response) => 
       return res.json({ success: true, data: updatedMeter, message: 'Meter reassigned successfully' });
     }
 
-    // No record for this customer. Check if there's a removed record from another customer we can reuse
-    const removedFromOther = allMetersWithNumber.find(m => m.status === 'removed');
-    if (removedFromOther) {
-      // Reassign it to the new customer
-      const updatedMeter = await prisma.gasMeter.update({
-        where: { id: removedFromOther.id },
-        data: {
-          consumerId: consumerProfile.id,
-          status: 'active',
-          aliasName: alias_name || 'My Meter',
-          ownerName: owner_name || removedFromOther.ownerName,
-          ownerPhone: owner_phone || removedFromOther.ownerPhone
-        }
-      });
-      return res.json({ success: true, data: updatedMeter, message: 'Meter reassigned successfully' });
-    }
 
     // No existing record at all — create a brand new one
     const newMeter = await prisma.gasMeter.create({
@@ -5442,9 +5435,8 @@ export const adminUnlinkGasMeter = async (req: AuthRequest, res: Response) => {
     const meter = await prisma.gasMeter.findUnique({ where: { id: Number(id) } });
     if (!meter) return res.status(404).json({ success: false, error: 'Gas meter not found' });
 
-    await prisma.gasMeter.update({
-      where: { id: Number(id) },
-      data: { status: 'removed' }
+    await prisma.gasMeter.delete({
+      where: { id: Number(id) }
     });
 
     res.json({ success: true, message: 'Gas meter unlinked successfully' });
