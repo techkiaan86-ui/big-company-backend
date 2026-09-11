@@ -49,12 +49,16 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
           }
         }
       }),
-      // Today's orders
+      // Today's orders — but also respect lastSettlementDate so that generating a
+      // profit invoice resets this counter (if invoice was generated today, only
+      // orders placed AFTER the invoice time count as "today's").
       prisma.order.findMany({
         where: {
           wholesalerId: wholesalerProfile.id,
           createdAt: {
-            gte: today,
+            gte: wholesalerProfile.lastSettlementDate && wholesalerProfile.lastSettlementDate > today
+              ? wholesalerProfile.lastSettlementDate  // profit invoice generated today → start from invoice time
+              : today,                                // no invoice today → start from midnight
             lt: tomorrow
           }
         }
