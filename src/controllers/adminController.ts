@@ -2546,10 +2546,11 @@ export const registerNFCCard = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'NFC cards must be assigned only to an existing customer account.' });
     }
 
+    const generatedCardNumber = cardNumber || Math.floor(100000 + Math.random() * 900000).toString();
     const card = await prisma.nfcCard.create({
       data: {
         uid: normalizedUid,
-        cardNumber,
+        cardNumber: generatedCardNumber,
         pin: pin || '1234',
         status: finalStatus,
         balance: 0,

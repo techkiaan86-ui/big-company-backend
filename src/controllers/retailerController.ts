@@ -1154,7 +1154,7 @@ export const createSale = async (req: AuthRequest, res: Response) => {
           paymentMethod: payment_method,
           status: isMobileMoney ? 'pending_payment' : 'completed',
           meterId: externalRef || (payment_method === 'nfc' ? payment_details?.uid : null), // Store Ref or Card UID
-          notes: isMobileMoney ? JSON.stringify({ gasRewardWalletId: targetRewardId, consumerId: consumerId }) : null,
+          notes: isMobileMoney ? JSON.stringify({ gasRewardWalletId: targetRewardId, rewardConsumerId: rewardConsumerId || consumerId, consumerId: consumerId }) : null,
           saleItems: {
             create: items.map((item: any) => ({
               productId: Number(item.product_id),
@@ -3266,9 +3266,11 @@ export const linkCardForCustomer = async (req: AuthRequest, res: Response) => {
         }
       });
     } else {
+      const generatedCardNumber = Math.floor(100000 + Math.random() * 900000).toString();
       await prisma.nfcCard.create({
         data: {
           uid,
+          cardNumber: generatedCardNumber,
           pin: pin || '1234',
           cardholderName: nickname || 'Linked at Store',
           consumerId: targetCustomerId,
