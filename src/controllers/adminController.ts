@@ -5471,7 +5471,7 @@ export const adminRegisterGasMeter = async (req: AuthRequest, res: Response) => 
         where: { id: existingForThisCustomer.id },
         data: {
           status: 'active',
-          aliasName: alias_name || existingForThisCustomer.aliasName || 'My Meter',
+          aliasName: alias_name || 'My Meter',
           ownerName: owner_name || existingForThisCustomer.ownerName,
           ownerPhone: owner_phone || existingForThisCustomer.ownerPhone
         }
@@ -5505,12 +5505,16 @@ export const adminUnlinkGasMeter = async (req: AuthRequest, res: Response) => {
     const meter = await prisma.gasMeter.findUnique({ where: { id: Number(id) } });
     if (!meter) return res.status(404).json({ success: false, error: 'Gas meter not found' });
 
-    // Cannot hard-delete: GasTopup records are FK-linked to GasMeter (onDelete: NoAction)
-    // Setting status to 'removed' hides the meter from the admin list and frees the
-    // meter number to be freshly registered to a different customer (creating a new DB row).
+    // We cannot delete gasTopups because we need them for financial auditing.
+    // Instead, we 'retire' this meter record by changing its meterNumber so 
+    // if the same meter is linked again, it creates a completely new, clean database row.
     await prisma.gasMeter.update({
       where: { id: Number(id) },
-      data: { status: 'removed', currentUnits: 0 }
+      data: { 
+        status: 'removed', 
+        currentUnits: 0,
+        meterNumber: `${meter.meterNumber}-removed-${Date.now()}`
+      }
     });
 
     res.json({ success: true, message: 'Gas meter unlinked successfully' });

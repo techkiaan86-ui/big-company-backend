@@ -383,6 +383,11 @@ export const topupGas = async (req: AuthRequest, res: Response) => {
                         where: { id: topup.id },
                         data: { status: 'Recharge successful', orderId: token }
                     });
+                    
+                    await prisma.gasMeter.update({
+                        where: { id: meter.id },
+                        data: { currentUnits: { increment: units } }
+                    });
                 } else {
                     // Keep status as 'Sent to Meter' so the background scheduler can check and retry later
                     await prisma.gasTopup.update({
@@ -416,6 +421,11 @@ export const topupGas = async (req: AuthRequest, res: Response) => {
                 await prisma.gasTopup.update({
                     where: { id: topup.id },
                     data: { status: 'Recharge successful' }
+                });
+
+                await prisma.gasMeter.update({
+                    where: { id: meter.id },
+                    data: { currentUnits: { increment: units } }
                 });
             }
 
