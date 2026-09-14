@@ -283,9 +283,11 @@ export const handlePalmKashWebhook = async (req: Request, res: Response) => {
                     }
                 }
 
-                const isFullySuccessful = apiResult.success && pushResult.success;
-                const finalStatus = isFullySuccessful ? 'SUCCESS' : 'FAILED';
-                const finalErrorMsg = isFullySuccessful ? null : (pushResult.error || apiResult.error || 'Meter recharge failed');
+                const isFullySuccessful = apiResult.success;
+                const finalStatus = isFullySuccessful 
+                    ? (pushResult.success ? 'SUCCESS' : 'TOKEN_GENERATED_PENDING_PUSH') 
+                    : 'FAILED';
+                const finalErrorMsg = isFullySuccessful ? null : (apiResult.error || 'Meter recharge failed');
 
                 await prisma.gasRechargeTransaction.update({
                     where: { id: txRecord.id },
