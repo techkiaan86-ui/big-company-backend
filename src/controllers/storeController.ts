@@ -22,8 +22,8 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
 
   log('--- createOrder entered ---');
   try {
-    const { retailerId, items = [], paymentMethod, total = 0, applyRewardGas, rewardGasAmount, meterId, gasRewardWalletId, phone, phoneNumber, mobileNumber, retailer_email } = req.body;
-    log(`Body parsed: ${JSON.stringify({ retailerId, paymentMethod, total, phone, phoneNumber, mobileNumber, retailer_email })}`);
+    const { retailerId, items = [], paymentMethod, total = 0, applyRewardGas, rewardGasAmount, meterId, gasRewardWalletId, phone, phoneNumber, mobileNumber, retailer_email, walletType } = req.body;
+    log(`Body parsed: ${JSON.stringify({ retailerId, paymentMethod, total, phone, phoneNumber, mobileNumber, retailer_email, walletType })}`);
 
     const isUssdCallback = paymentMethod === 'ussd_callback';
     if (isUssdCallback) {
@@ -169,12 +169,14 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     let targetRewardId = gasRewardWalletId || meterId;
     log(`Target Reward ID: ${targetRewardId}`);
 
-    if (paymentMethod === 'credit_wallet') {
+    const selectedWalletType = walletType || paymentMethod;
+
+    if (selectedWalletType === 'credit_wallet') {
       log('Credit wallet payment, no rewards');
       shouldCalculateReward = false;
     } else {
       shouldCalculateReward = true;
-      log(`Rewards enabled for payment method: ${paymentMethod}`);
+      log(`Rewards enabled for payment method: ${selectedWalletType}`);
     }
 
     // Resolve which consumer receives the gas reward.
@@ -336,27 +338,29 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
           throw new Error('Invalid PIN');
         }
 
-        // Deduct from wallet instead of card balance
-        const dashboardWallet = await tx.wallet.findFirst({
-          where: { consumerId: consumerProfile.id, type: 'dashboard_wallet' }
+        const activeWalletType = selectedWalletType === 'credit_wallet' ? 'credit_wallet' : 'dashboard_wallet';
+        
+        // Deduct from appropriate wallet instead of card balance
+        const targetWallet = await tx.wallet.findFirst({
+          where: { consumerId: consumerProfile.id, type: activeWalletType }
         });
 
-        if (!dashboardWallet || dashboardWallet.balance < amountToPay) {
-          throw new Error(`Insufficient wallet balance. Required: ${amountToPay} RWF`);
+        if (!targetWallet || targetWallet.balance < amountToPay) {
+          throw new Error(`Insufficient ${activeWalletType.replace('_', ' ')} balance. Required: ${amountToPay} RWF`);
         }
 
-        console.log('Deducting from dashboard wallet via NFC verification...');
+        console.log(`Deducting from ${activeWalletType} via NFC verification...`);
         await tx.wallet.update({
-          where: { id: dashboardWallet.id },
+          where: { id: targetWallet.id },
           data: { balance: { decrement: amountToPay } }
         });
 
         await tx.walletTransaction.create({
           data: {
-            walletId: dashboardWallet.id,
+            walletId: targetWallet.id,
             type: 'purchase_nfc',
             amount: -amountToPay,
-            description: `Payment to Retailer via NFC Card (${card.uid.slice(-4)})`,
+            description: `Payment to Retailer via NFC Card (${card.uid.slice(-4)}) - ${activeWalletType.replace('_', ' ')}`,
             status: 'completed'
           }
         });

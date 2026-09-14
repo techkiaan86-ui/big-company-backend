@@ -107,7 +107,8 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
     const txTotal = await prisma.walletTransaction.count();
     const walletTopups = txs.filter(t => t.type === 'top_up').length;
     const gasPurchases = txs.filter(t => t.type === 'gas_payment' || t.type === 'gas_purchase').length;
-    const nfcPayments = sales.filter(s => s.paymentMethod === 'nfc' || s.paymentMethod === 'nfc_card').filter(s => s.createdAt >= last30d).length;
+    const nfcPayments = sales.filter(s => s.paymentMethod === 'nfc' || s.paymentMethod === 'nfc_card')
+      .filter(s => s.createdAt >= last30d && (lastProfitResetDate ? s.createdAt >= lastProfitResetDate : true)).length;
     
     // Only count DEBIT (outflow) wallet transactions to avoid double-counting
     // transfers/reward-shares (which create both a debit and a credit record).
@@ -123,13 +124,13 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
     // Exclude gas-recharge Sales (those with a meterId set) because the same
     // payment is already captured in directGasVolume via the GasTopup table.
     const directSalesVolume = sales
-      .filter(s => s.createdAt >= last30d && (lastGasResetDate ? s.createdAt >= lastGasResetDate : true))
+      .filter(s => s.createdAt >= last30d && (lastGasResetDate ? s.createdAt >= lastGasResetDate : true) && (lastProfitResetDate ? s.createdAt >= lastProfitResetDate : true))
       .filter(s => !walletPaymentMethods.includes(s.paymentMethod))
       .filter(s => !s.meterId)  // exclude gas recharges already counted in directGasVolume
       .reduce((acc, s) => acc + s.totalAmount, 0);
 
     const wholesaleOrdersVolume = wholesaleOrders
-      .filter(o => o.createdAt >= last30d && (lastGasResetDate ? o.createdAt >= lastGasResetDate : true))
+      .filter(o => o.createdAt >= last30d && (lastGasResetDate ? o.createdAt >= lastGasResetDate : true) && (lastProfitResetDate ? o.createdAt >= lastProfitResetDate : true))
       .filter(o => !walletPaymentMethods.includes(o.paymentMethod))
       .reduce((acc, o) => acc + o.totalAmount, 0);
 
@@ -262,7 +263,8 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
     ]));
 
     const matchingConsumers = await prisma.consumerProfile.findMany({
-      where: { id: { in: allConsumerIds } }
+      where: { id: { in: allConsumerIds } },
+      include: { user: true }
     });
     const consumerMap = new Map(matchingConsumers.map(c => [c.id, c]));
 
@@ -286,7 +288,7 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
         id: `sale-${s.id}`,
         action: 'order_placed',
         entity_type: 'order',
-        description: `Order of ${Math.round(s.totalAmount)} RWF by ${s.consumerProfile?.fullName || 'Customer'}`,
+        description: `Order of ${Math.round(s.totalAmount)} RWF by ${(s.consumerProfile as any)?.fullName || (s.consumerProfile as any)?.user?.name || 'Customer'}`,
         created_at: s.createdAt
       })),
       ...recentConsumers.map(c => ({
@@ -1055,8 +1057,8 @@ export const getLoans = async (req: AuthRequest, res: Response) => {
       };
     }));
 
-    // 2. Fetch Retailer Stock Loans (CreditRequests)
-    const creditRequestsRaw = await prisma.creditRequest.findMany({
+    // 2. Fetch actual Retailer Loans
+    const retailerLoansRaw = await prisma.retailerLoan.findMany({
       include: {
         retailerProfile: {
           include: {
@@ -1068,34 +1070,26 @@ export const getLoans = async (req: AuthRequest, res: Response) => {
       orderBy: { createdAt: 'desc' }
     });
 
-    const retailerLoans = creditRequestsRaw.map((cr) => {
-      const rate = Number(rates.retailerInterestRate) || 0;
-      const interestAmount = Math.round(cr.amount * (rate / 100));
-      const totalRepayable = cr.amount + interestAmount;
-
-      let st = cr.status;
-      if (st === 'pending') st = 'pending';
-      else if (st === 'approved') st = 'active';
-      else if (st === 'rejected') st = 'rejected';
-      else st = 'completed';
+    const retailerLoans = retailerLoansRaw.map((loan) => {
+      const amountPaid = loan.totalRepayable - loan.remainingAmount;
 
       return {
-        id: 10000 + cr.id,
-        user_id: cr.retailerProfile?.userId?.toString() || '',
-        user_name: cr.retailerProfile?.shopName || 'Retailer Shop',
+        id: 10000 + loan.id,
+        user_id: loan.retailerProfile?.userId?.toString() || '',
+        user_name: loan.retailerProfile?.shopName || 'Retailer Shop',
         user_type: 'retailer',
-        amount: cr.amount,
-        interest_rate: rate,
-        interest_amount: interestAmount,
+        amount: loan.amount,
+        interest_rate: loan.interestRate,
+        interest_amount: loan.totalRepayable - loan.amount,
         duration_months: 1,
-        monthly_payment: totalRepayable,
-        total_repayable: totalRepayable,
-        amount_paid: st === 'completed' ? totalRepayable : 0,
-        amount_remaining: (st === 'completed' || st === 'rejected') ? 0 : totalRepayable,
-        status: st,
-        lender: cr.retailerProfile?.linkedWholesaler?.companyName || 'Associated Wholesaler Shop',
-        created_at: cr.createdAt.toISOString(),
-        due_date: new Date(cr.createdAt.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString()
+        monthly_payment: loan.totalRepayable,
+        total_repayable: loan.totalRepayable,
+        amount_paid: amountPaid,
+        amount_remaining: loan.remainingAmount,
+        status: loan.status,
+        lender: loan.retailerProfile?.linkedWholesaler?.companyName || 'Associated Wholesaler Shop',
+        created_at: loan.createdAt.toISOString(),
+        due_date: loan.dueDate?.toISOString() || new Date(loan.createdAt.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString()
       };
     });
 
@@ -2951,36 +2945,40 @@ const recalculateAllProductsBackground = async (config: any) => {
 
     let updatedCount = 0;
     for (const product of products) {
-      const prodAny = product as any;
-      if (prodAny.supplierCost === null || prodAny.supplierCost === undefined) continue;
+      try {
+        const prodAny = product as any;
+        if (prodAny.supplierCost === null || prodAny.supplierCost === undefined) continue;
 
-      const taxType = prodAny.taxType || 'B';
+        const taxType = prodAny.taxType || 'B';
 
-      // 1. Calculate Wholesaler Price
-      const wholesalePricing = calculateWholesalePrice(
-        prodAny.supplierCost,
-        wholesalerMarkupPct,
-        taxType,
-        exciseDutyRatePct
-      );
+        // 1. Calculate Wholesaler Price
+        const wholesalePricing = calculateWholesalePrice(
+          prodAny.supplierCost,
+          wholesalerMarkupPct,
+          taxType,
+          exciseDutyRatePct
+        );
 
-      // 2. Calculate Retailer Price (using the wholesaler's pre-tax price as the retailer's clean base cost)
-      const retailPricing = calculateRetailPrice(
-        wholesalePricing.preTaxPrice,
-        retailerMarkupPct,
-        taxType,
-        exciseDutyRatePct
-      );
+        // 2. Calculate Retailer Price (using the wholesaler's pre-tax price as the retailer's clean base cost)
+        const retailPricing = calculateRetailPrice(
+          wholesalePricing.preTaxPrice,
+          retailerMarkupPct,
+          taxType,
+          exciseDutyRatePct
+        );
 
-      // 3. Update Product
-      await prisma.product.update({
-        where: { id: product.id },
-        data: {
-          price: wholesalePricing.finalInvoicePrice,
-          retailerPrice: retailPricing.finalConsumerShelfPrice
-        }
-      });
-      updatedCount++;
+        // 3. Update Product
+        await prisma.product.update({
+          where: { id: product.id },
+          data: {
+            price: wholesalePricing.finalInvoicePrice,
+            retailerPrice: retailPricing.finalConsumerShelfPrice
+          }
+        });
+        updatedCount++;
+      } catch (innerError) {
+        console.error(`❌ Failed to recalculate wholesaler product ${product.id}:`, innerError);
+      }
     }
 
     console.log(`✅ Background recalculation complete for wholesaler products. Updated ${updatedCount} products.`);
@@ -2998,39 +2996,43 @@ const recalculateAllProductsBackground = async (config: any) => {
 
     let retailUpdatedCount = 0;
     for (const rProduct of retailerProducts) {
-      const rProdAny = rProduct as any;
-      if (rProduct.costPrice === null || rProduct.costPrice === undefined) continue;
+      try {
+        const rProdAny = rProduct as any;
+        if (rProduct.costPrice === null || rProduct.costPrice === undefined) continue;
 
-      // Find the corresponding wholesaler product robustly to get the correct live taxType
-      const wholesalerProduct = await prisma.product.findFirst({
-        where: {
-          retailerId: null,
-          wholesalerId: { not: null },
-          OR: [
-            rProduct.sku ? { sku: rProduct.sku } : { id: -1 },
-            rProduct.barcode ? { barcode: rProduct.barcode } : { id: -1 },
-            { name: rProduct.name }
-          ]
-        }
-      });
+        // Find the corresponding wholesaler product robustly to get the correct live taxType
+        const wholesalerProduct = await prisma.product.findFirst({
+          where: {
+            retailerId: null,
+            wholesalerId: { not: null },
+            OR: [
+              rProduct.sku ? { sku: rProduct.sku } : { id: -1 },
+              rProduct.barcode ? { barcode: rProduct.barcode } : { id: -1 },
+              { name: rProduct.name }
+            ]
+          }
+        });
 
-      const taxType = wholesalerProduct?.taxType || rProdAny.taxType || 'B';
+        const taxType = wholesalerProduct?.taxType || rProdAny.taxType || 'B';
 
-      const retailPricing = calculateRetailPrice(
-        rProduct.costPrice,
-        retailerMarkupPct,
-        taxType,
-        exciseDutyRatePct
-      );
+        const retailPricing = calculateRetailPrice(
+          rProduct.costPrice,
+          retailerMarkupPct,
+          taxType,
+          exciseDutyRatePct
+        );
 
-      await prisma.product.update({
-        where: { id: rProduct.id },
-        data: {
-          price: retailPricing.finalConsumerShelfPrice,
-          taxType: taxType
-        }
-      });
-      retailUpdatedCount++;
+        await prisma.product.update({
+          where: { id: rProduct.id },
+          data: {
+            price: retailPricing.finalConsumerShelfPrice,
+            taxType: taxType
+          }
+        });
+        retailUpdatedCount++;
+      } catch (innerError) {
+        console.error(`❌ Failed to recalculate retailer product ${rProduct.id}:`, innerError);
+      }
     }
 
     console.log(`✅ Background recalculation complete for retailer products. Updated ${retailUpdatedCount} products.`);

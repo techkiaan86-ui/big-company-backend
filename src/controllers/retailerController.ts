@@ -214,12 +214,12 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
       where: { retailerId: retailerProfile.id },
       take: 5,
       orderBy: { createdAt: 'desc' },
-      include: { consumerProfile: true }
+      include: { consumerProfile: { include: { user: true } } }
     });
 
     const formattedRecentOrders = recentOrders.map(order => ({
       id: order.id.toString(),
-      customer: order.consumerProfile?.fullName || (order.consumerProfile?.membershipType === 'catering' ? 'Catering' : 'Walk-in Customer'),
+      customer: order.consumerProfile?.fullName || order.consumerProfile?.user?.name || (order.consumerProfile?.membershipType === 'catering' ? 'Catering' : 'Walk-in Customer'),
       items: 0,
       total: order.totalAmount,
       status: order.status,
@@ -2105,8 +2105,8 @@ export const getCreditOrders = async (req: AuthRequest, res: Response) => {
       display_id: o.id.toString().substring(0, 8).toUpperCase(),
       wholesaler_name: o.wholesalerProfile?.companyName,
       total_amount: o.totalAmount,
-      amount_paid: 0, // In future, check related payments
-      amount_pending: o.totalAmount, // Simplified for now
+      amount_paid: (o as any).amountPaid || 0, // Using real amountPaid from DB
+      amount_pending: Math.max(0, o.totalAmount - ((o as any).amountPaid || 0)), // Dynamic remaining
       status: o.status,
       due_date: new Date(new Date(o.createdAt).setDate(new Date(o.createdAt).getDate() + 30)).toISOString(),
       created_at: o.createdAt
@@ -2135,8 +2135,8 @@ export const getCreditOrder = async (req: AuthRequest, res: Response) => {
       display_id: order.id.toString().substring(0, 8).toUpperCase(),
       wholesaler_name: (order as any).wholesalerProfile?.companyName,
       total_amount: order.totalAmount,
-      amount_paid: 0,
-      amount_pending: order.totalAmount,
+      amount_paid: (order as any).amountPaid || 0,
+      amount_pending: Math.max(0, order.totalAmount - ((order as any).amountPaid || 0)),
       status: order.status,
       due_date: new Date(new Date(order.createdAt).setDate(new Date(order.createdAt).getDate() + 30)).toISOString(),
       created_at: order.createdAt,
@@ -2352,12 +2352,16 @@ export const makeRepayment = async (req: AuthRequest, res: Response) => {
       }
 
       // Update Order Status (if fully paid)
-      if (amount >= order.totalAmount) {
-        await prisma.order.update({
-          where: { id: order.id },
-          data: { status: 'completed' }
-        });
-      }
+      const currentPaid = (order as any).amountPaid || 0;
+      const newPaid = currentPaid + amount;
+      
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { 
+          amountPaid: newPaid,
+          status: newPaid >= order.totalAmount ? 'completed' : order.status 
+        } as any
+      });
     });
 
     res.json({ success: true, message: 'Repayment successful' });

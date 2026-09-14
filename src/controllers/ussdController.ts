@@ -449,14 +449,16 @@ export const handleUSSDRequestCore = async (req: Request, res: Response) => {
               }
             }
 
-            const isFullySuccessful = apiResult && apiResult.success && pushResult.success;
+            // If API successfully generated the token, we consider the payment/transaction a success.
+            // Even if push fails, the user still bought the gas and can type the token manually.
+            const isFullySuccessful = apiResult && apiResult.success;
 
             if (isFullySuccessful && createdTxId) {
               // Update transaction to SUCCESS and record token
               await prisma.gasRechargeTransaction.update({
                 where: { id: createdTxId },
                 data: {
-                  status: 'SUCCESS',
+                  status: pushResult.success ? 'SUCCESS' : 'TOKEN_GENERATED_PENDING_PUSH',
                   tokenValue: apiResult.token || null,
                   apiReference: apiResult.apiReference || null
                 }
