@@ -3355,7 +3355,7 @@ export const getRetailerAccountDetails = async (req: AuthRequest, res: Response)
         sales: {
           orderBy: { createdAt: 'desc' },
           include: {
-            consumerProfile: { include: { user: { select: { phone: true } } } },
+            consumerProfile: { include: { user: { select: { phone: true, name: true, email: true } } } },
             saleItems: { include: { product: true } }
           }
         },
@@ -5515,6 +5515,9 @@ export const adminUnlinkGasMeter = async (req: AuthRequest, res: Response) => {
       data: { 
         status: 'removed', 
         currentUnits: 0,
+        aliasName: null,
+        ownerName: null,
+        ownerPhone: null,
         meterNumber: `${meter.meterNumber}-removed-${Date.now()}`
       }
     });

@@ -986,9 +986,9 @@ export const createSale = async (req: AuthRequest, res: Response) => {
     const result = await prisma.$transaction(async (prisma) => {
       let consumerId = null;
 
-      // --- Handle NFC Payment (Unified Dashboard + Credit) ---
+      // --- Handle NFC Payment (Respect Selected Wallet) ---
       if (payment_method === 'nfc') {
-        const { uid, pin } = payment_details || {};
+        const { uid, pin, wallet_type } = payment_details || {};
         const card = await prisma.nfcCard.findFirst({ 
           where: { 
             OR: [
@@ -1005,65 +1005,40 @@ export const createSale = async (req: AuthRequest, res: Response) => {
 
         consumerId = card.consumerId;
 
-        // Get both wallets
-        const wallets = await prisma.wallet.findMany({
-          where: { consumerId: consumerId, type: { in: ['dashboard_wallet', 'credit_wallet'] } }
+        const activeWalletType = wallet_type === 'credit' ? 'credit_wallet' : 'dashboard_wallet';
+
+        // Get target wallet
+        const targetWallet = await prisma.wallet.findFirst({
+          where: { consumerId: consumerId, type: activeWalletType }
         });
 
-        const dashboardWallet = wallets.find(w => w.type === 'dashboard_wallet');
-        const creditWallet = wallets.find(w => w.type === 'credit_wallet');
-        const totalAvailable = (dashboardWallet?.balance || 0) + (creditWallet?.balance || 0);
-
-        if (totalAvailable < total) {
-          throw new Error(`Insufficient combined balance. Available: ${totalAvailable.toLocaleString()} RWF`);
+        if (!targetWallet || targetWallet.balance < total) {
+          throw new Error(`Insufficient ${activeWalletType.replace('_', ' ')} balance. Required: ${total.toLocaleString()} RWF`);
         }
 
-        let remainingToDeduct = total;
+        // Deduct from target wallet
+        await prisma.wallet.update({
+          where: { id: targetWallet.id },
+          data: { balance: { decrement: total } }
+        });
 
-        // 1. Deduct from Dashboard Wallet first
-        if (dashboardWallet && dashboardWallet.balance > 0) {
-          const deductFromDashboard = Math.min(dashboardWallet.balance, remainingToDeduct);
-          await prisma.wallet.update({
-            where: { id: dashboardWallet.id },
-            data: { balance: { decrement: deductFromDashboard } }
-          });
-
-          // Sync legacy balance
+        // Sync legacy balance if dashboard wallet
+        if (activeWalletType === 'dashboard_wallet') {
           await prisma.consumerProfile.update({
             where: { id: consumerId },
-            data: { walletBalance: { decrement: deductFromDashboard } }
-          });
-
-          await prisma.walletTransaction.create({
-            data: {
-              walletId: dashboardWallet.id,
-              type: 'purchase_nfc',
-              amount: -deductFromDashboard,
-              description: `POS purchase via NFC Card (Dashboard part)`,
-              status: 'completed'
-            }
-          });
-
-          remainingToDeduct -= deductFromDashboard;
-        }
-
-        // 2. Deduct remaining from Credit Wallet
-        if (remainingToDeduct > 0 && creditWallet) {
-          await prisma.wallet.update({
-            where: { id: creditWallet.id },
-            data: { balance: { decrement: remainingToDeduct } }
-          });
-
-          await prisma.walletTransaction.create({
-            data: {
-              walletId: creditWallet.id,
-              type: 'purchase_nfc',
-              amount: -remainingToDeduct,
-              description: `POS purchase via NFC Card (Credit part)`,
-              status: 'completed'
-            }
+            data: { walletBalance: { decrement: total } }
           });
         }
+
+        await prisma.walletTransaction.create({
+          data: {
+            walletId: targetWallet.id,
+            type: 'purchase_nfc',
+            amount: -total,
+            description: `POS purchase via NFC Card (${activeWalletType.replace('_', ' ')})`,
+            status: 'completed'
+          }
+        });
       }
 
       // --- Handle Wallet Payment ---
@@ -1201,7 +1176,10 @@ export const createSale = async (req: AuthRequest, res: Response) => {
       // ==========================================
       // Reward is eligible for standard payment methods OR whenever a gasRewardWalletId
       // was explicitly entered at checkout (covers cash/card POS payments too).
-      const isRewardEligible = ['dashboard_wallet', 'mobile_money', 'wallet'].includes(payment_method) || !!rewardConsumerId;
+      // However, Credit Wallet payments STRICTLY DO NOT earn rewards.
+      const { wallet_type } = payment_details || {};
+      const isCreditWalletPayment = payment_method === 'credit_wallet' || (payment_method === 'nfc' && wallet_type === 'credit');
+      const isRewardEligible = !isCreditWalletPayment && (['dashboard_wallet', 'mobile_money', 'wallet'].includes(payment_method) || !!rewardConsumerId);
 
 
       // rewardConsumerId is the owner of the gasRewardWalletId entered at checkout —
