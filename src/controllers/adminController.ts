@@ -5462,6 +5462,17 @@ export const adminRegisterGasMeter = async (req: AuthRequest, res: Response) => 
       return res.status(400).json({ success: false, error: 'Meter is already active. Please unlink it first.' });
     }
 
+    // Try to find a previous record to inherit hardware settings (since unlinking appends -removed-)
+    const previousRecord = await prisma.gasMeter.findFirst({
+      where: {
+        OR: [
+          { meterNumber: meter_number },
+          { meterNumber: { startsWith: `${meter_number}-removed-` } }
+        ]
+      },
+      orderBy: { updatedAt: 'desc' }
+    });
+
     // No existing active record — create a brand new one for a clean history slate
     const newMeter = await prisma.gasMeter.create({
       data: {
@@ -5470,7 +5481,12 @@ export const adminRegisterGasMeter = async (req: AuthRequest, res: Response) => 
         aliasName: alias_name || 'My Meter',
         ownerName: owner_name,
         ownerPhone: owner_phone,
-        status: 'active'
+        status: 'active',
+        meterType: previousRecord?.meterType || 'PIPING',
+        isGprs: previousRecord?.isGprs || false,
+        imei: previousRecord?.imei || null,
+        meterKey: previousRecord?.meterKey || null,
+        serialNo: previousRecord?.serialNo || null,
       }
     });
 
