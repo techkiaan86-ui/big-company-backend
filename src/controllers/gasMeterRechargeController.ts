@@ -450,7 +450,7 @@ export const initiateGasMeterRecharge = async (req: AuthRequest, res: Response) 
                         where: { id: meter.id },
                         data: {
                             currentUnits: {
-                                increment: Number(apiResult.units) || 0
+                                increment: Number(apiResult.units) || totalVolume
                             }
                         }
                     });
