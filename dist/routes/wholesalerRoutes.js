@@ -5,8 +5,11 @@ const wholesalerController_1 = require("../controllers/wholesalerController");
 const retailersController_1 = require("../controllers/retailersController");
 const managementController_1 = require("../controllers/managementController");
 const profileController_1 = require("../controllers/profileController");
+const taxController_1 = require("../controllers/taxController");
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const router = (0, express_1.Router)();
+// Tax Management
+router.get('/taxes', authMiddleware_1.authenticate, taxController_1.getWholesalerTaxes);
 router.use(authMiddleware_1.authenticate);
 // Dashboard
 router.get('/dashboard', wholesalerController_1.getDashboardStats);

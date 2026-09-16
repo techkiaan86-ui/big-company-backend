@@ -888,7 +888,12 @@ const getOrderStats = (req, res) => __awaiter(void 0, void 0, void 0, function* 
             prisma_1.default.order.findMany({
                 where: {
                     wholesalerId: wholesalerProfile.id,
-                    createdAt: { gte: today, lt: tomorrow }
+                    createdAt: {
+                        gte: wholesalerProfile.lastSettlementDate && wholesalerProfile.lastSettlementDate > today
+                            ? wholesalerProfile.lastSettlementDate
+                            : today,
+                        lt: tomorrow
+                    }
                 }
             })
         ]);

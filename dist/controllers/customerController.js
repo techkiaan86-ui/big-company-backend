@@ -571,9 +571,12 @@ const getProfileStats = (req, res) => __awaiter(void 0, void 0, void 0, function
         const walletBalance = wallets
             .filter(w => w.type === 'dashboard_wallet' || w.type === 'credit_wallet')
             .reduce((sum, wallet) => sum + wallet.balance, 0);
-        // Get live gas rewards balance from gas_rewards_wallet table
-        const rewardsWallet = wallets.find(w => w.type === 'gas_rewards_wallet');
-        const totalGasRewards = rewardsWallet ? rewardsWallet.balance : 0;
+        // Get live gas rewards balance from GasReward table (same source as Rewards page)
+        const gasRewardsSum = yield prisma_1.default.gasReward.aggregate({
+            where: { consumerId: consumerProfile.id },
+            _sum: { units: true }
+        });
+        const totalGasRewards = gasRewardsSum._sum.units || 0;
         res.json({
             success: true,
             data: {

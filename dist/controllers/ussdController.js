@@ -75,13 +75,20 @@ function findNfcCard(cardNumInput) {
         const cleaned = cardNumInput.replace(/[\s:]/g, '').toUpperCase();
         // 1. Direct search by uid (exactly as is)
         let card = yield prisma_1.default.nfcCard.findFirst({
-            where: { uid: cardNumInput.trim() }
+            where: {
+                OR: [
+                    { uid: cardNumInput.trim() },
+                    { cardNumber: cardNumInput.trim() }
+                ]
+            }
         });
         if (card)
             return card;
         // 2. Query all cards and find by cleaned/friendly match
         const cards = yield prisma_1.default.nfcCard.findMany();
         card = cards.find(c => {
+            if (c.cardNumber && c.cardNumber.trim() === cleaned)
+                return true;
             const dbCleaned = c.uid.replace(/[\s:]/g, '').toUpperCase();
             if (dbCleaned === cleaned)
                 return true;
@@ -447,13 +454,15 @@ const handleUSSDRequestCore = (req, res) => __awaiter(void 0, void 0, void 0, fu
                                 pushResult.error = pushErr.message || 'Remote push connection error';
                             }
                         }
-                        const isFullySuccessful = apiResult && apiResult.success && pushResult.success;
+                        // If API successfully generated the token, we consider the payment/transaction a success.
+                        // Even if push fails, the user still bought the gas and can type the token manually.
+                        const isFullySuccessful = apiResult && apiResult.success;
                         if (isFullySuccessful && createdTxId) {
                             // Update transaction to SUCCESS and record token
                             yield prisma_1.default.gasRechargeTransaction.update({
                                 where: { id: createdTxId },
                                 data: {
-                                    status: 'SUCCESS',
+                                    status: pushResult.success ? 'SUCCESS' : 'TOKEN_GENERATED_PENDING_PUSH',
                                     tokenValue: apiResult.token || null,
                                     apiReference: apiResult.apiReference || null
                                 }
@@ -989,7 +998,8 @@ const handleUSSDRequestCore = (req, res) => __awaiter(void 0, void 0, void 0, fu
                         return res.send('END Error: Insufficient wallet balance.');
                     }
                     const saleItems = yield prisma_1.default.saleItem.findMany({
-                        where: { saleId: sale.id }
+                        where: { saleId: sale.id },
+                        include: { product: true }
                     });
                     // Deduct & update sale status to 'pending' (paid)
                     yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
@@ -1027,6 +1037,54 @@ const handleUSSDRequestCore = (req, res) => __awaiter(void 0, void 0, void 0, fu
                                 where: { id: item.productId },
                                 data: { stock: { decrement: item.quantity } }
                             });
+                        }
+                        // Calculate and Grant Gas Reward (only for Dashboard Wallet)
+                        if (walletTypeChoice === '1' && sale.notes) {
+                            try {
+                                const meta = JSON.parse(sale.notes);
+                                const { gasRewardWalletId, rewardConsumerId, consumerId } = meta;
+                                const targetRewardId = gasRewardWalletId;
+                                const targetConsumerId = rewardConsumerId || consumerId || card.consumerId;
+                                if (targetRewardId && targetConsumerId) {
+                                    let totalProfit = 0;
+                                    for (const item of saleItems) {
+                                        if (item.product) {
+                                            let sellingPrice = Number(item.price);
+                                            if (item.product.taxType === 'B') {
+                                                sellingPrice = sellingPrice / 1.18;
+                                            }
+                                            const costPrice = item.product.costPrice ? Number(item.product.costPrice) : 0;
+                                            const profitPerItem = sellingPrice - costPrice;
+                                            if (profitPerItem > 0) {
+                                                totalProfit += profitPerItem * Number(item.quantity);
+                                            }
+                                        }
+                                    }
+                                    if (totalProfit > 0) {
+                                        const config = yield tx.systemConfig.findFirst();
+                                        const gasPrice = (config === null || config === void 0 ? void 0 : config.gasPricePerM3) || 6500;
+                                        const gasRewardShare = (config === null || config === void 0 ? void 0 : config.gasRewardShare) !== undefined ? config.gasRewardShare / 100 : 0.12;
+                                        const rewardAmountRWF = totalProfit * gasRewardShare;
+                                        const rewardUnits = Number((rewardAmountRWF / gasPrice).toFixed(4));
+                                        if (rewardUnits > 0) {
+                                            yield tx.gasReward.create({
+                                                data: {
+                                                    consumerId: targetConsumerId,
+                                                    saleId: sale.id,
+                                                    meterId: targetRewardId,
+                                                    units: rewardUnits,
+                                                    profitAmount: totalProfit,
+                                                    source: 'purchase_reward',
+                                                    reference: `Reward for Sale #${sale.id}`
+                                                }
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                            catch (parseErr) {
+                                console.error('Failed to process gas reward metadata in USSD Wallet payment:', parseErr);
+                            }
                         }
                     }));
                     return res.send(`END Payment successful! Your order #${sale.id} is now paid.`);

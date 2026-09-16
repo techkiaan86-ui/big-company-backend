@@ -49,7 +49,6 @@ exports.getOrderDetails = exports.getCustomerOrders = exports.getGasRewardsLeade
 const prisma_1 = __importDefault(require("../utils/prisma"));
 const pipingMeter_service_1 = __importDefault(require("../services/pipingMeter.service"));
 const tokenMeter_service_1 = __importDefault(require("../services/tokenMeter.service"));
-const gprsMapping_1 = require("../config/gprsMapping");
 // Get gas configuration (price, etc)
 const getGasConfig = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -177,150 +176,12 @@ const getGasMeters = (req, res) => __awaiter(void 0, void 0, void 0, function* (
 exports.getGasMeters = getGasMeters;
 // Add gas meter
 const addGasMeter = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    try {
-        const userId = req.user.id;
-        const { meter_number, alias_name, owner_name, owner_phone, meter_type, meter_key, serial_no } = req.body;
-        if (!meter_number) {
-            return res.status(400).json({ success: false, error: 'Meter number is required' });
-        }
-        const consumerProfile = yield prisma_1.default.consumerProfile.findUnique({
-            where: { userId }
-        });
-        if (!consumerProfile) {
-            return res.status(404).json({ success: false, error: 'Customer profile not found' });
-        }
-        // Check if meter already exists for this consumer (active or removed)
-        const existingMeter = yield prisma_1.default.gasMeter.findFirst({
-            where: {
-                meterNumber: meter_number,
-                consumerId: consumerProfile.id
-            }
-        });
-        if (existingMeter) {
-            if (existingMeter.status === 'removed') {
-                // Check if meter is currently active under any other account before reactivating
-                const activeMeterElsewhere = yield prisma_1.default.gasMeter.findFirst({
-                    where: {
-                        meterNumber: meter_number,
-                        status: 'active'
-                    }
-                });
-                if (activeMeterElsewhere) {
-                    return res.status(400).json({
-                        success: false,
-                        error: 'This meter number is already registered and active under another account. It must be removed from the other account first.'
-                    });
-                }
-                // Reactivate the existing meter
-                const updatedMeter = yield prisma_1.default.gasMeter.update({
-                    where: { id: existingMeter.id },
-                    data: {
-                        status: 'active',
-                        aliasName: alias_name || existingMeter.aliasName || 'My Meter',
-                        ownerName: owner_name || existingMeter.ownerName,
-                        ownerPhone: owner_phone || existingMeter.ownerPhone
-                    }
-                });
-                return res.json({
-                    success: true,
-                    data: {
-                        id: updatedMeter.id,
-                        meter_number: updatedMeter.meterNumber,
-                        owner_name: updatedMeter.ownerName,
-                        owner_phone: updatedMeter.ownerPhone,
-                        status: updatedMeter.status
-                    },
-                    message: 'Gas meter reactivated successfully'
-                });
-            }
-            else {
-                return res.status(400).json({ success: false, error: 'Meter number already registered and active' });
-            }
-        }
-        // Check if meter is currently active under any other account
-        const activeMeterElsewhere = yield prisma_1.default.gasMeter.findFirst({
-            where: {
-                meterNumber: meter_number,
-                status: 'active'
-            }
-        });
-        if (activeMeterElsewhere) {
-            return res.status(400).json({
-                success: false,
-                error: 'This meter number is already registered and active under another account. It must be removed from the other account first.'
-            });
-        }
-        const matchedGprs = gprsMapping_1.gprsMapping.find(m => m.meterNo === meter_number || m.meterNo === meter_number.replace(/^MTR-/i, ''));
-        const meter = yield prisma_1.default.gasMeter.create({
-            data: {
-                consumerId: consumerProfile.id,
-                meterNumber: meter_number,
-                imei: matchedGprs ? matchedGprs.imei : null,
-                serialNo: matchedGprs ? matchedGprs.serialNo : (serial_no || null),
-                meterKey: matchedGprs ? matchedGprs.meterKey : (meter_key || null),
-                isGprs: matchedGprs ? true : false,
-                meterType: matchedGprs ? 'PIPING' : (meter_type === 'PIPING' || meter_type === 'GPRS' ? 'PIPING' : 'TOKEN'),
-                aliasName: alias_name || 'My Meter',
-                ownerName: owner_name,
-                ownerPhone: owner_phone,
-                status: 'active'
-            }
-        });
-        res.json({
-            success: true,
-            data: {
-                id: meter.id,
-                meter_number: meter.meterNumber,
-                meter_key: meter.meterKey,
-                serial_no: meter.serialNo,
-                alias_name: meter.aliasName,
-                owner_name: meter.ownerName,
-                owner_phone: meter.ownerPhone,
-                status: meter.status
-            },
-            message: 'Gas meter added successfully'
-        });
-    }
-    catch (error) {
-        console.error('Add gas meter error:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
+    return res.status(403).json({ error: 'Consumers are no longer allowed to manage gas meters. Please contact an administrator.' });
 });
 exports.addGasMeter = addGasMeter;
 // Remove gas meter
 const removeGasMeter = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    try {
-        const userId = req.user.id;
-        const { id } = req.params;
-        const consumerProfile = yield prisma_1.default.consumerProfile.findUnique({
-            where: { userId }
-        });
-        if (!consumerProfile) {
-            return res.status(404).json({ success: false, error: 'Customer profile not found' });
-        }
-        const meter = yield prisma_1.default.gasMeter.findFirst({
-            where: {
-                id: Number(id),
-                consumerId: consumerProfile.id
-            }
-        });
-        if (!meter) {
-            return res.status(404).json({ success: false, error: 'Gas meter not found' });
-        }
-        // Soft delete the meter
-        yield prisma_1.default.gasMeter.update({
-            where: { id: meter.id },
-            data: { status: 'removed' }
-        });
-        res.json({
-            success: true,
-            message: 'Gas meter removed successfully'
-        });
-    }
-    catch (error) {
-        console.error('Remove gas meter error:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
+    return res.status(403).json({ error: 'Consumers are no longer allowed to manage gas meters. Please contact an administrator.' });
 });
 exports.removeGasMeter = removeGasMeter;
 // Topup gas
@@ -530,6 +391,10 @@ const topupGas = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
                         where: { id: topup.id },
                         data: { status: 'Recharge successful', orderId: token }
                     });
+                    yield prisma_1.default.gasMeter.update({
+                        where: { id: meter.id },
+                        data: { currentUnits: { increment: units } }
+                    });
                 }
                 else {
                     // Keep status as 'Sent to Meter' so the background scheduler can check and retry later
@@ -563,6 +428,10 @@ const topupGas = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
                 yield prisma_1.default.gasTopup.update({
                     where: { id: topup.id },
                     data: { status: 'Recharge successful' }
+                });
+                yield prisma_1.default.gasMeter.update({
+                    where: { id: meter.id },
+                    data: { currentUnits: { increment: units } }
                 });
             }
         }
@@ -658,7 +527,7 @@ const getGasUsage = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
             orderBy: { createdAt: 'desc' }
         });
         const lastGasResetDate = resetAlert ? new Date(resetAlert.errorMessage) : null;
-        const where = Object.assign({ consumerId: consumerProfile.id }, (lastGasResetDate ? { createdAt: { gte: lastGasResetDate } } : {}));
+        const where = Object.assign({ consumerId: consumerProfile.id, status: 'completed' }, (lastGasResetDate ? { createdAt: { gte: lastGasResetDate } } : {}));
         if (meter_id) {
             where.meterId = parseInt(meter_id, 10);
         }

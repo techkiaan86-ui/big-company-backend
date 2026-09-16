@@ -310,9 +310,11 @@ const handlePalmKashWebhook = (req, res) => __awaiter(void 0, void 0, void 0, fu
                             pushResult.error = pushErr.message || 'Remote push connection error';
                         }
                     }
-                    const isFullySuccessful = apiResult.success && pushResult.success;
-                    const finalStatus = isFullySuccessful ? 'SUCCESS' : 'FAILED';
-                    const finalErrorMsg = isFullySuccessful ? null : (pushResult.error || apiResult.error || 'Meter recharge failed');
+                    const isFullySuccessful = apiResult.success;
+                    const finalStatus = isFullySuccessful
+                        ? (pushResult.success ? 'SUCCESS' : 'TOKEN_GENERATED_PENDING_PUSH')
+                        : 'FAILED';
+                    const finalErrorMsg = isFullySuccessful ? null : (apiResult.error || 'Meter recharge failed');
                     yield prisma_1.default.gasRechargeTransaction.update({
                         where: { id: txRecord.id },
                         data: {
@@ -601,12 +603,13 @@ const handlePalmKashWebhook = (req, res) => __awaiter(void 0, void 0, void 0, fu
                                 // Calculate Profit
                                 let totalProfit = 0;
                                 for (const item of sale.saleItems) {
-                                    if (item.product && item.product.costPrice != null) {
+                                    if (item.product) {
                                         let sellingPrice = Number(item.price);
                                         if (item.product.taxType === 'B') {
                                             sellingPrice = sellingPrice / 1.18;
                                         }
-                                        const profitPerItem = sellingPrice - Number(item.product.costPrice);
+                                        const costPrice = item.product.costPrice ? Number(item.product.costPrice) : 0;
+                                        const profitPerItem = sellingPrice - costPrice;
                                         if (profitPerItem > 0) {
                                             totalProfit += profitPerItem * Number(item.quantity);
                                         }

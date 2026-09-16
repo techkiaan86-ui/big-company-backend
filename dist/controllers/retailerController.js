@@ -77,17 +77,16 @@ const getDashboardStats = (req, res) => __awaiter(void 0, void 0, void 0, functi
         const dateFilter = settlementDate ? { gte: settlementDate } : undefined;
         // Fetch data in parallel
         const [todaySales, allSales, inventory, pendingOrders, gasRewardsAggregate, systemConfig] = yield Promise.all([
-            // Today's Sales
             prisma_1.default.sale.findMany({
                 where: {
                     retailerId: retailerProfile.id,
-                    createdAt: { gte: today, lt: tomorrow }
+                    createdAt: { gte: today, lt: tomorrow },
+                    saleItems: { some: {} }
                 },
                 include: { saleItems: true }
             }),
-            // All Sales (for revenue stats)
             prisma_1.default.sale.findMany({
-                where: Object.assign({ retailerId: retailerProfile.id }, (dateFilter ? { createdAt: dateFilter } : {}))
+                where: Object.assign({ retailerId: retailerProfile.id, saleItems: { some: {} } }, (dateFilter ? { createdAt: dateFilter } : {}))
             }),
             prisma_1.default.product.findMany({
                 where: { retailerId: retailerProfile.id, wholesalerId: null }
@@ -113,7 +112,7 @@ const getDashboardStats = (req, res) => __awaiter(void 0, void 0, void 0, functi
         // Calculate Stats
         // DYNAMIC PROFIT CALCULATION (Realized form Sales)
         const sales = yield prisma_1.default.sale.findMany({
-            where: Object.assign({ retailerId: retailerProfile.id, status: { not: 'cancelled' } }, (dateFilter ? { createdAt: dateFilter } : {})),
+            where: Object.assign({ retailerId: retailerProfile.id, status: { not: 'cancelled' }, saleItems: { some: {} } }, (dateFilter ? { createdAt: dateFilter } : {})),
             include: {
                 saleItems: {
                     include: { product: true }
@@ -221,13 +220,13 @@ const getDashboardStats = (req, res) => __awaiter(void 0, void 0, void 0, functi
             where: { retailerId: retailerProfile.id },
             take: 5,
             orderBy: { createdAt: 'desc' },
-            include: { consumerProfile: true }
+            include: { consumerProfile: { include: { user: true } } }
         });
         const formattedRecentOrders = recentOrders.map(order => {
-            var _a;
+            var _a, _b, _c, _d;
             return ({
                 id: order.id.toString(),
-                customer: ((_a = order.consumerProfile) === null || _a === void 0 ? void 0 : _a.fullName) || 'Walk-in Customer',
+                customer: ((_a = order.consumerProfile) === null || _a === void 0 ? void 0 : _a.fullName) || ((_c = (_b = order.consumerProfile) === null || _b === void 0 ? void 0 : _b.user) === null || _c === void 0 ? void 0 : _c.name) || (((_d = order.consumerProfile) === null || _d === void 0 ? void 0 : _d.membershipType) === 'catering' ? 'Catering' : 'Walk-in Customer'),
                 items: 0,
                 total: order.totalAmount,
                 status: order.status,
@@ -577,7 +576,14 @@ const getOrders = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         }
         const { status, payment_status, search, limit = '20', offset = '0' } = req.query;
         const where = {
-            retailerId: retailerProfile.id
+            retailerId: retailerProfile.id,
+            // Exclude gas recharge sales: they have a meterId but no saleItems
+            NOT: {
+                AND: [
+                    { meterId: { not: null } },
+                    { saleItems: { none: {} } }
+                ]
+            }
         };
         if (status) {
             where.status = status;
@@ -607,13 +613,13 @@ const getOrders = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         const total = yield prisma_1.default.sale.count({ where });
         // Map to frontend Order interface
         const formattedOrders = sales.map(sale => {
-            var _a, _b, _c, _d, _e;
+            var _a, _b, _c, _d, _e, _f, _g, _h;
             return ({
                 id: sale.id,
                 display_id: sale.id.toString(),
-                customer_name: ((_a = sale.consumerProfile) === null || _a === void 0 ? void 0 : _a.fullName) || 'Walk-in Customer',
-                customer_phone: ((_c = (_b = sale.consumerProfile) === null || _b === void 0 ? void 0 : _b.user) === null || _c === void 0 ? void 0 : _c.phone) || 'N/A',
-                customer_email: (_e = (_d = sale.consumerProfile) === null || _d === void 0 ? void 0 : _d.user) === null || _e === void 0 ? void 0 : _e.email,
+                customer_name: ((_a = sale.consumerProfile) === null || _a === void 0 ? void 0 : _a.fullName) || ((_c = (_b = sale.consumerProfile) === null || _b === void 0 ? void 0 : _b.user) === null || _c === void 0 ? void 0 : _c.name) || (((_d = sale.consumerProfile) === null || _d === void 0 ? void 0 : _d.membershipType) === 'catering' ? 'Catering' : 'Walk-in Customer'),
+                customer_phone: ((_f = (_e = sale.consumerProfile) === null || _e === void 0 ? void 0 : _e.user) === null || _f === void 0 ? void 0 : _f.phone) || 'N/A',
+                customer_email: (_h = (_g = sale.consumerProfile) === null || _g === void 0 ? void 0 : _g.user) === null || _h === void 0 ? void 0 : _h.email,
                 items: [], // saleItems not included in query, would need separate fetch
                 subtotal: sale.totalAmount, // Simplified
                 discount: 0,
@@ -644,7 +650,7 @@ const getOrders = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
 exports.getOrders = getOrders;
 // Get single order
 const getOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d, _e, _f, _g, _h;
     try {
         const retailerProfile = yield prisma_1.default.retailerProfile.findUnique({
             where: { userId: req.user.id }
@@ -669,9 +675,9 @@ const getOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         const formattedOrder = {
             id: sale.id,
             display_id: sale.id.toString(),
-            customer_name: ((_a = sale.consumerProfile) === null || _a === void 0 ? void 0 : _a.fullName) || 'Walk-in Customer',
-            customer_phone: ((_c = (_b = sale.consumerProfile) === null || _b === void 0 ? void 0 : _b.user) === null || _c === void 0 ? void 0 : _c.phone) || 'N/A',
-            customer_email: (_e = (_d = sale.consumerProfile) === null || _d === void 0 ? void 0 : _d.user) === null || _e === void 0 ? void 0 : _e.email,
+            customer_name: ((_a = sale.consumerProfile) === null || _a === void 0 ? void 0 : _a.fullName) || ((_c = (_b = sale.consumerProfile) === null || _b === void 0 ? void 0 : _b.user) === null || _c === void 0 ? void 0 : _c.name) || (((_d = sale.consumerProfile) === null || _d === void 0 ? void 0 : _d.membershipType) === 'catering' ? 'Catering' : 'Walk-in Customer'),
+            customer_phone: ((_f = (_e = sale.consumerProfile) === null || _e === void 0 ? void 0 : _e.user) === null || _f === void 0 ? void 0 : _f.phone) || 'N/A',
+            customer_email: (_h = (_g = sale.consumerProfile) === null || _g === void 0 ? void 0 : _g.user) === null || _h === void 0 ? void 0 : _h.email,
             items: sale.saleItems.map(item => ({
                 id: item.id,
                 product_id: item.productId,
@@ -874,8 +880,11 @@ const createSale = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
             }
         }
         // --- End Module 5 ---
-        // Validate Gas Reward Wallet ID if provided
+        // Validate Gas Reward Wallet ID if provided and save the target consumer's ID.
+        // This is needed so cash/card POS sales can still award gas rewards even though
+        // no consumerId is set from the payment method itself.
         const { gasRewardWalletId } = req.body;
+        let rewardConsumerId = null;
         if (gasRewardWalletId) {
             const rewardConsumer = yield prisma_1.default.consumerProfile.findFirst({
                 where: { gasRewardWalletId: gasRewardWalletId }
@@ -883,6 +892,7 @@ const createSale = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
             if (!rewardConsumer) {
                 return res.status(400).json({ error: `Invalid Gas Reward Wallet ID: ${gasRewardWalletId}` });
             }
+            rewardConsumerId = rewardConsumer.id;
         }
         // 1. Validate items and stock
         const productIds = items.map((item) => Number(item.product_id));
@@ -901,10 +911,17 @@ const createSale = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
         // 2. Perform Transaction with increased timeout for remote DB
         const result = yield prisma_1.default.$transaction((prisma) => __awaiter(void 0, void 0, void 0, function* () {
             let consumerId = null;
-            // --- Handle NFC Payment (Unified Dashboard + Credit) ---
+            // --- Handle NFC Payment (Respect Selected Wallet) ---
             if (payment_method === 'nfc') {
-                const { uid, pin } = payment_details || {};
-                const card = yield prisma.nfcCard.findUnique({ where: { uid } });
+                const { uid, pin, wallet_type } = payment_details || {};
+                const card = yield prisma.nfcCard.findFirst({
+                    where: {
+                        OR: [
+                            { uid: uid },
+                            { cardNumber: uid }
+                        ]
+                    }
+                });
                 if (!card)
                     throw new Error('NFC Card not found');
                 if (card.status !== 'active')
@@ -914,56 +931,35 @@ const createSale = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
                 if (!card.consumerId)
                     throw new Error('NFC Card is not linked to any customer');
                 consumerId = card.consumerId;
-                // Get both wallets
-                const wallets = yield prisma.wallet.findMany({
-                    where: { consumerId: consumerId, type: { in: ['dashboard_wallet', 'credit_wallet'] } }
+                const activeWalletType = wallet_type === 'credit' ? 'credit_wallet' : 'dashboard_wallet';
+                // Get target wallet
+                const targetWallet = yield prisma.wallet.findFirst({
+                    where: { consumerId: consumerId, type: activeWalletType }
                 });
-                const dashboardWallet = wallets.find(w => w.type === 'dashboard_wallet');
-                const creditWallet = wallets.find(w => w.type === 'credit_wallet');
-                const totalAvailable = ((dashboardWallet === null || dashboardWallet === void 0 ? void 0 : dashboardWallet.balance) || 0) + ((creditWallet === null || creditWallet === void 0 ? void 0 : creditWallet.balance) || 0);
-                if (totalAvailable < total) {
-                    throw new Error(`Insufficient combined balance. Available: ${totalAvailable.toLocaleString()} RWF`);
+                if (!targetWallet || targetWallet.balance < total) {
+                    throw new Error(`Insufficient ${activeWalletType.replace('_', ' ')} balance. Required: ${total.toLocaleString()} RWF`);
                 }
-                let remainingToDeduct = total;
-                // 1. Deduct from Dashboard Wallet first
-                if (dashboardWallet && dashboardWallet.balance > 0) {
-                    const deductFromDashboard = Math.min(dashboardWallet.balance, remainingToDeduct);
-                    yield prisma.wallet.update({
-                        where: { id: dashboardWallet.id },
-                        data: { balance: { decrement: deductFromDashboard } }
-                    });
-                    // Sync legacy balance
+                // Deduct from target wallet
+                yield prisma.wallet.update({
+                    where: { id: targetWallet.id },
+                    data: { balance: { decrement: total } }
+                });
+                // Sync legacy balance if dashboard wallet
+                if (activeWalletType === 'dashboard_wallet') {
                     yield prisma.consumerProfile.update({
                         where: { id: consumerId },
-                        data: { walletBalance: { decrement: deductFromDashboard } }
-                    });
-                    yield prisma.walletTransaction.create({
-                        data: {
-                            walletId: dashboardWallet.id,
-                            type: 'purchase_nfc',
-                            amount: -deductFromDashboard,
-                            description: `POS purchase via NFC Card (Dashboard part)`,
-                            status: 'completed'
-                        }
-                    });
-                    remainingToDeduct -= deductFromDashboard;
-                }
-                // 2. Deduct remaining from Credit Wallet
-                if (remainingToDeduct > 0 && creditWallet) {
-                    yield prisma.wallet.update({
-                        where: { id: creditWallet.id },
-                        data: { balance: { decrement: remainingToDeduct } }
-                    });
-                    yield prisma.walletTransaction.create({
-                        data: {
-                            walletId: creditWallet.id,
-                            type: 'purchase_nfc',
-                            amount: -remainingToDeduct,
-                            description: `POS purchase via NFC Card (Credit part)`,
-                            status: 'completed'
-                        }
+                        data: { walletBalance: { decrement: total } }
                     });
                 }
+                yield prisma.walletTransaction.create({
+                    data: {
+                        walletId: targetWallet.id,
+                        type: 'purchase_nfc',
+                        amount: -total,
+                        description: `POS purchase via NFC Card (${activeWalletType.replace('_', ' ')})`,
+                        status: 'completed'
+                    }
+                });
             }
             // --- Handle Wallet Payment ---
             if (payment_method === 'wallet') {
@@ -992,8 +988,6 @@ const createSale = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
                 });
                 consumerId = consumer.id;
             }
-            const { gasRewardWalletId, gas_meter_id } = req.body;
-            const targetRewardId = gasRewardWalletId || gas_meter_id;
             // --- Handle PalmKash (Mobile Money) ---
             let externalRef = null;
             if (payment_method === 'mobile_money' || payment_method === 'momo' || payment_method === 'mtn' || payment_method === 'airtel' || payment_method === 'airtel' || payment_method === 'airtel') {
@@ -1019,6 +1013,22 @@ const createSale = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
                 if (consumer)
                     consumerId = consumer.id;
             }
+            // --- Auto-Resolve Reward Wallet ID ---
+            const { gasRewardWalletId, gas_meter_id } = req.body;
+            let targetRewardId = gasRewardWalletId || gas_meter_id;
+            // Auto-fallback: if targetRewardId is missing but we know the consumer, get their default gasRewardWalletId
+            if (!targetRewardId && consumerId) {
+                const fallbackConsumer = yield prisma.consumerProfile.findUnique({
+                    where: { id: consumerId }
+                });
+                if (fallbackConsumer === null || fallbackConsumer === void 0 ? void 0 : fallbackConsumer.gasRewardWalletId) {
+                    targetRewardId = fallbackConsumer.gasRewardWalletId;
+                    // Also set rewardConsumerId if it wasn't set earlier
+                    if (!rewardConsumerId) {
+                        rewardConsumerId = consumerId;
+                    }
+                }
+            }
             // Create Sale Record
             const isMobileMoney = payment_method === 'mobile_money' || payment_method === 'momo' || payment_method === 'mtn' || payment_method === 'airtel';
             const sale = yield prisma.sale.create({
@@ -1029,7 +1039,7 @@ const createSale = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
                     paymentMethod: payment_method,
                     status: isMobileMoney ? 'pending_payment' : 'completed',
                     meterId: externalRef || (payment_method === 'nfc' ? payment_details === null || payment_details === void 0 ? void 0 : payment_details.uid : null), // Store Ref or Card UID
-                    notes: isMobileMoney ? JSON.stringify({ gasRewardWalletId: targetRewardId, consumerId: consumerId }) : null,
+                    notes: isMobileMoney ? JSON.stringify({ gasRewardWalletId: targetRewardId, rewardConsumerId: rewardConsumerId || consumerId, consumerId: consumerId }) : null,
                     saleItems: {
                         create: items.map((item) => ({
                             productId: Number(item.product_id),
@@ -1071,14 +1081,28 @@ const createSale = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
             // ==========================================
             // GAS REWARD LOGIC (POS)
             // ==========================================
-            const isRewardEligible = ['dashboard_wallet', 'mobile_money', 'wallet'].includes(payment_method);
-            if (isRewardEligible && targetRewardId && consumerId && !isMobileMoney) {
+            // Reward is eligible for standard payment methods OR whenever a gasRewardWalletId
+            // was explicitly entered at checkout (covers cash/card POS payments too).
+            // However, Credit Wallet payments STRICTLY DO NOT earn rewards.
+            const { wallet_type } = payment_details || {};
+            const isCreditWalletPayment = payment_method === 'credit_wallet' || (payment_method === 'nfc' && wallet_type === 'credit');
+            const isRewardEligible = !isCreditWalletPayment && (['dashboard_wallet', 'mobile_money', 'wallet'].includes(payment_method) || !!rewardConsumerId);
+            // rewardConsumerId is the owner of the gasRewardWalletId entered at checkout —
+            // that is ALWAYS the intended reward target. consumerId (the shopper) is only
+            // a fallback for when no gasRewardWalletId was entered at all.
+            const effectiveRewardConsumerId = rewardConsumerId || consumerId;
+            if (isRewardEligible && targetRewardId && effectiveRewardConsumerId && !isMobileMoney) {
                 // Calculate Profit
                 let totalProfit = 0;
                 for (const item of items) {
                     const product = productMap.get(Number(item.product_id));
-                    if (product && product.costPrice != null) {
-                        const profitPerItem = Number(item.price) - product.costPrice;
+                    if (product) {
+                        let sellingPrice = Number(item.price);
+                        if (product.taxType === 'B') {
+                            sellingPrice = sellingPrice / 1.18;
+                        }
+                        const costPrice = product.costPrice ? Number(product.costPrice) : 0;
+                        const profitPerItem = sellingPrice - costPrice;
                         if (profitPerItem > 0) {
                             totalProfit += profitPerItem * Number(item.quantity);
                         }
@@ -1092,7 +1116,7 @@ const createSale = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
                     const rewardUnits = Number((rewardAmountRWF / gasPrice).toFixed(4));
                     yield prisma.gasReward.create({
                         data: {
-                            consumerId: consumerId,
+                            consumerId: effectiveRewardConsumerId,
                             saleId: sale.id,
                             meterId: targetRewardId,
                             units: rewardUnits,
@@ -1889,8 +1913,8 @@ const getCreditOrders = (req, res) => __awaiter(void 0, void 0, void 0, function
                 display_id: o.id.toString().substring(0, 8).toUpperCase(),
                 wholesaler_name: (_a = o.wholesalerProfile) === null || _a === void 0 ? void 0 : _a.companyName,
                 total_amount: o.totalAmount,
-                amount_paid: 0, // In future, check related payments
-                amount_pending: o.totalAmount, // Simplified for now
+                amount_paid: o.amountPaid || 0, // Using real amountPaid from DB
+                amount_pending: Math.max(0, o.totalAmount - (o.amountPaid || 0)), // Dynamic remaining
                 status: o.status,
                 due_date: new Date(new Date(o.createdAt).setDate(new Date(o.createdAt).getDate() + 30)).toISOString(),
                 created_at: o.createdAt
@@ -1919,8 +1943,8 @@ const getCreditOrder = (req, res) => __awaiter(void 0, void 0, void 0, function*
             display_id: order.id.toString().substring(0, 8).toUpperCase(),
             wholesaler_name: (_a = order.wholesalerProfile) === null || _a === void 0 ? void 0 : _a.companyName,
             total_amount: order.totalAmount,
-            amount_paid: 0,
-            amount_pending: order.totalAmount,
+            amount_paid: order.amountPaid || 0,
+            amount_pending: Math.max(0, order.totalAmount - (order.amountPaid || 0)),
             status: order.status,
             due_date: new Date(new Date(order.createdAt).setDate(new Date(order.createdAt).getDate() + 30)).toISOString(),
             created_at: order.createdAt,
@@ -2115,12 +2139,15 @@ const makeRepayment = (req, res) => __awaiter(void 0, void 0, void 0, function* 
                 });
             }
             // Update Order Status (if fully paid)
-            if (amount >= order.totalAmount) {
-                yield prisma.order.update({
-                    where: { id: order.id },
-                    data: { status: 'completed' }
-                });
-            }
+            const currentPaid = order.amountPaid || 0;
+            const newPaid = currentPaid + amount;
+            yield prisma.order.update({
+                where: { id: order.id },
+                data: {
+                    amountPaid: newPaid,
+                    status: newPaid >= order.totalAmount ? 'completed' : order.status
+                }
+            });
         }));
         res.json({ success: true, message: 'Repayment successful' });
     }
@@ -2936,9 +2963,11 @@ const linkCardForCustomer = (req, res) => __awaiter(void 0, void 0, void 0, func
             });
         }
         else {
+            const generatedCardNumber = Math.floor(100000 + Math.random() * 900000).toString();
             yield prisma_1.default.nfcCard.create({
                 data: {
                     uid,
+                    cardNumber: generatedCardNumber,
                     pin: pin || '1234',
                     cardholderName: nickname || 'Linked at Store',
                     consumerId: targetCustomerId,
@@ -3609,13 +3638,13 @@ const getPaymentAuditLogs = (req, res) => __awaiter(void 0, void 0, void 0, func
         });
         const total = yield prisma_1.default.sale.count({ where });
         const formattedLogs = sales.map(sale => {
-            var _a, _b, _c, _d;
+            var _a, _b, _c, _d, _e;
             const card = (_a = sale.consumerProfile) === null || _a === void 0 ? void 0 : _a.nfcCards[0];
             return {
                 id: sale.id.toString(),
                 cardId: sale.meterId || (card === null || card === void 0 ? void 0 : card.uid) || 'N/A', // Use meterId as fallback for card UID if we start storing it there
                 orderId: sale.id,
-                customerName: ((_b = sale.consumerProfile) === null || _b === void 0 ? void 0 : _b.fullName) || ((_d = (_c = sale.consumerProfile) === null || _c === void 0 ? void 0 : _c.user) === null || _d === void 0 ? void 0 : _d.name) || 'Walk-in Customer',
+                customerName: ((_b = sale.consumerProfile) === null || _b === void 0 ? void 0 : _b.fullName) || ((_d = (_c = sale.consumerProfile) === null || _c === void 0 ? void 0 : _c.user) === null || _d === void 0 ? void 0 : _d.name) || (((_e = sale.consumerProfile) === null || _e === void 0 ? void 0 : _e.membershipType) === 'catering' ? 'Catering' : 'Walk-in Customer'),
                 amount: sale.totalAmount,
                 method: sale.paymentMethod,
                 createdAt: sale.createdAt.toISOString()
@@ -3838,7 +3867,7 @@ exports.payRetailerLoan = payRetailerLoan;
 const configureDraftOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
-        const { items = [] } = req.body;
+        const { items = [], rewardWalletId } = req.body;
         const currentSale = yield prisma_1.default.sale.findUnique({
             where: { id: Number(id) },
             include: { saleItems: true }
@@ -3874,13 +3903,33 @@ const configureDraftOrder = (req, res) => __awaiter(void 0, void 0, void 0, func
         }
         // Parse customer phone number from notes
         let customerPhone = null;
+        let existingNotes = {};
         try {
-            const notesData = JSON.parse(currentSale.notes || '{}');
-            customerPhone = notesData.phone || notesData.phoneNumber || notesData.mobileNumber || null;
+            existingNotes = JSON.parse(currentSale.notes || '{}');
+            customerPhone = existingNotes.phone || existingNotes.phoneNumber || existingNotes.mobileNumber || null;
         }
         catch (e) {
             console.error('Failed to parse sale notes for phone number:', e);
         }
+        // If retailer provided a Reward Wallet ID, look up the consumer whose gasRewardWalletId matches
+        if (rewardWalletId) {
+            try {
+                const rewardConsumer = yield prisma_1.default.consumerProfile.findFirst({
+                    where: { gasRewardWalletId: String(rewardWalletId) }
+                });
+                if (rewardConsumer) {
+                    existingNotes.gasRewardWalletId = rewardWalletId;
+                    existingNotes.rewardConsumerId = rewardConsumer.id;
+                }
+                else {
+                    console.warn(`[ConfigureOrder] Reward Wallet ID "${rewardWalletId}" did not match any consumer. Reward will be skipped.`);
+                }
+            }
+            catch (rewardLookupErr) {
+                console.error('[ConfigureOrder] Failed to look up reward wallet:', rewardLookupErr);
+            }
+        }
+        const updatedNotes = JSON.stringify(existingNotes);
         const ordRef = `ORD-${Date.now()}`;
         yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
             // Clear existing items if any
@@ -3898,13 +3947,14 @@ const configureDraftOrder = (req, res) => __awaiter(void 0, void 0, void 0, func
                     }
                 });
             }
-            // Update sale price, reference (meterId), and move status to pending_payment
+            // Update sale price, reference (meterId), notes with reward info, and move status to pending_payment
             yield tx.sale.update({
                 where: { id: Number(id) },
                 data: {
                     totalAmount,
                     status: 'pending_payment',
-                    meterId: ordRef // Stored for PalmKash webhook mapping
+                    meterId: ordRef, // Stored for PalmKash webhook mapping
+                    notes: updatedNotes
                 }
             });
         }));

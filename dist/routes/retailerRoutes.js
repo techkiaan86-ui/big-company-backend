@@ -2,8 +2,11 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const retailerController_1 = require("../controllers/retailerController");
+const taxController_1 = require("../controllers/taxController");
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const router = (0, express_1.Router)();
+// Tax Management
+router.get('/taxes', authMiddleware_1.authenticate, taxController_1.getRetailerTaxes);
 router.use(authMiddleware_1.authenticate);
 router.get('/dashboard', retailerController_1.getDashboardStats);
 router.get('/inventory', retailerController_1.getInventory);

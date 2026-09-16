@@ -5463,7 +5463,7 @@ export const adminRegisterGasMeter = async (req: AuthRequest, res: Response) => 
     }
 
     // Try to find a previous record to inherit hardware settings (since unlinking appends -removed-)
-    const previousRecord = await prisma.gasMeter.findFirst({
+    const allPrevious = await prisma.gasMeter.findMany({
       where: {
         OR: [
           { meterNumber: meter_number },
@@ -5472,6 +5472,9 @@ export const adminRegisterGasMeter = async (req: AuthRequest, res: Response) => 
       },
       orderBy: { id: 'desc' }
     });
+    
+    // Find the best previous record (one that has isGprs: true, or has imei)
+    const previousRecord = allPrevious.find(r => r.isGprs) || allPrevious.find(r => r.imei) || allPrevious[0];
 
     // No existing active record — create a brand new one for a clean history slate
     const newMeter = await prisma.gasMeter.create({
@@ -5483,7 +5486,7 @@ export const adminRegisterGasMeter = async (req: AuthRequest, res: Response) => 
         ownerPhone: owner_phone,
         status: 'active',
         meterType: previousRecord?.meterType || 'PIPING',
-        isGprs: previousRecord?.isGprs || false,
+        isGprs: previousRecord?.isGprs || meter_number.startsWith('2510'),
         imei: previousRecord?.imei || null,
         meterKey: previousRecord?.meterKey || null,
         serialNo: previousRecord?.serialNo || null,

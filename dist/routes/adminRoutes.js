@@ -2,16 +2,21 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const adminController_1 = require("../controllers/adminController");
+const taxController_1 = require("../controllers/taxController");
 const supplierController_1 = require("../controllers/supplierController");
 const recruitmentController_1 = require("../controllers/recruitmentController");
 const dealsController_1 = require("../controllers/dealsController");
 const gasPricingPlanController_1 = require("../controllers/gasPricingPlanController");
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const readOnlyMiddleware_1 = require("../middleware/readOnlyMiddleware");
+const gasController_1 = require("../controllers/gasController");
 const router = (0, express_1.Router)();
 router.use(authMiddleware_1.authenticate);
+router.use((0, authMiddleware_1.authorize)('admin', 'superadmin'));
 router.use(readOnlyMiddleware_1.enforceReadOnly);
 router.get('/dashboard', adminController_1.getDashboard);
+// Tax Management
+router.get('/taxes', taxController_1.getAdminTaxes);
 // Customer Routes
 router.get('/customers', adminController_1.getCustomers);
 router.get('/customers/:id', adminController_1.getCustomer);
@@ -42,8 +47,16 @@ router.get('/nfc-cards', adminController_1.getNFCCards);
 router.post('/nfc-cards', adminController_1.registerNFCCard);
 router.put('/nfc-cards/:id/block', adminController_1.blockNFCCard);
 router.put('/nfc-cards/:id/activate', adminController_1.activateNFCCard);
-router.put('/nfc-cards/:id/unlink', adminController_1.unlinkNFCCard);
+router.put('/nfc-cards/:id/unlink', adminController_1.adminUnlinkCard);
+router.post('/nfc-cards/:id/link', adminController_1.adminLinkCard);
+router.post('/nfc-cards/:id/pin', adminController_1.adminChangeNFCPin);
 router.get('/nfc-cards/:id/transactions', adminController_1.getNFCCardTransactions);
+// Admin Gas Meters
+router.get('/gas-meters', adminController_1.adminGetGasMeters);
+router.post('/gas-meters', adminController_1.adminRegisterGasMeter);
+router.put('/gas-meters/:id/unlink', adminController_1.adminUnlinkGasMeter);
+// Rewards & Leaderboard
+router.get('/gas-rewards/leaderboard', gasController_1.getGasRewardsLeaderboard);
 // Product Routes
 router.get('/products', adminController_1.getProducts);
 router.post('/products', adminController_1.createProduct);

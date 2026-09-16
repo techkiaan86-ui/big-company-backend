@@ -108,12 +108,12 @@ class TemplateService {
      */
     static getTemplate(nameOrSlug, data) {
         return __awaiter(this, void 0, void 0, function* () {
-            const prisma = new (yield Promise.resolve().then(() => __importStar(require('@prisma/client')))).PrismaClient();
+            const { default: globalPrisma } = yield Promise.resolve().then(() => __importStar(require('../utils/prisma')));
             let templateName = nameOrSlug;
             try {
                 // 1. Try to resolve the template name from the event mapping first
                 // @ts-ignore
-                const mapping = yield prisma.emailEvent.findUnique({
+                const mapping = yield globalPrisma.emailEvent.findUnique({
                     where: { eventSlug: nameOrSlug }
                 });
                 if (mapping) {
@@ -122,7 +122,7 @@ class TemplateService {
                 }
                 // 2. Fetch the actual template content
                 // @ts-ignore
-                const dbTemplate = yield prisma.emailTemplate.findUnique({
+                const dbTemplate = yield globalPrisma.emailTemplate.findUnique({
                     where: { name: templateName, isActive: true }
                 });
                 if (dbTemplate) {
