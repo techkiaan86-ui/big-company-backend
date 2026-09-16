@@ -5470,7 +5470,7 @@ export const adminRegisterGasMeter = async (req: AuthRequest, res: Response) => 
           { meterNumber: { startsWith: `${meter_number}-removed-` } }
         ]
       },
-      orderBy: { updatedAt: 'desc' }
+      orderBy: { id: 'desc' }
     });
 
     // No existing active record — create a brand new one for a clean history slate
