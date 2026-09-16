@@ -450,7 +450,7 @@ export const initiateGasMeterRecharge = async (req: AuthRequest, res: Response) 
                         where: { id: meter.id },
                         data: {
                             currentUnits: {
-                                increment: Number(apiResult.units) || 0
+                                increment: Number(apiResult.units) || totalVolume
                             }
                         }
                     });
@@ -606,6 +606,20 @@ export const getGasMeterRechargeHistory = async (req: AuthRequest, res: Response
 
         if (meterNumber) {
             whereClause.meterNumber = { contains: String(meterNumber) };
+            
+            // Fix: Only show history for the current assignment to prevent "history coming back"
+            // Find the active assignment of this meter for the customer
+            const activeMeter = await prisma.gasMeter.findFirst({
+                where: { 
+                    meterNumber: String(meterNumber), 
+                    status: 'active',
+                    consumerId: whereClause.customerId // ensure it belongs to this customer
+                }
+            });
+            
+            if (activeMeter) {
+                whereClause.createdAt = { gte: activeMeter.createdAt };
+            }
         }
 
         const [transactions, total] = await Promise.all([
