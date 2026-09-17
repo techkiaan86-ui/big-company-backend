@@ -2078,19 +2078,26 @@ export const deleteProduct = async (req: AuthRequest, res: Response) => {
 
     const whereClause = targetProduct.sku ? { sku: targetProduct.sku } : { name: targetProduct.name };
 
-    try {
-      // Attempt hard delete (works if the product has never been ordered or sold)
-      await prisma.product.deleteMany({ where: whereClause });
-      res.json({ success: true, message: 'Products permanently deleted successfully' });
-    } catch (dbError: any) {
-      // If there are foreign key constraint references (e.g. P2003 error), fall back to soft delete
-      console.warn('Hard delete failed due to active constraints. Falling back to soft delete.', dbError.message);
-      await prisma.product.updateMany({
-        where: whereClause,
-        data: { status: 'deleted' }
-      });
-      res.json({ success: true, message: 'Products soft-deleted successfully' });
+    const productsToDelete = await prisma.product.findMany({ where: whereClause });
+    let deletedCount = 0;
+    let softDeletedCount = 0;
+
+    for (const p of productsToDelete) {
+      try {
+        await prisma.product.delete({ where: { id: p.id } });
+        deletedCount++;
+      } catch (dbError: any) {
+        // If there are foreign key constraint references (e.g. P2003 error), fall back to soft delete
+        console.warn(`Hard delete failed for product ${p.id}. Falling back to soft delete.`);
+        await prisma.product.update({
+          where: { id: p.id },
+          data: { status: 'deleted' }
+        });
+        softDeletedCount++;
+      }
     }
+
+    res.json({ success: true, message: `Products processed: ${deletedCount} permanently deleted, ${softDeletedCount} soft-deleted due to active constraints.` });
   } catch (error: any) {
     console.error('Delete Product Error:', error);
     res.status(500).json({ error: error.message });

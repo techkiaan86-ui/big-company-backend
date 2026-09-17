@@ -246,7 +246,8 @@ export const getInventory = async (req: AuthRequest, res: Response) => {
     // Build where clause
     const where: any = {
       wholesalerId: wholesalerProfile.id,
-      retailerId: null  // Never show retailer-owned products in wholesaler inventory
+      retailerId: null, // Never show retailer-owned products in wholesaler inventory
+      status: { not: 'deleted' }
     };
 
     if (category) {
@@ -315,7 +316,8 @@ export const getInventoryStats = async (req: AuthRequest, res: Response) => {
     const zeroPriceProducts = await prisma.product.findMany({
       where: {
         wholesalerId: wholesalerProfile.id,
-        price: 0
+        price: 0,
+        status: { not: 'deleted' }
       }
     });
 
@@ -342,7 +344,10 @@ export const getInventoryStats = async (req: AuthRequest, res: Response) => {
     }
 
     const products = await prisma.product.findMany({
-      where: { wholesalerId: wholesalerProfile.id }
+      where: { 
+        wholesalerId: wholesalerProfile.id,
+        status: { not: 'deleted' }
+      }
     });
 
     // Calculate statistics
@@ -872,11 +877,19 @@ export const deleteProduct = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'Wholesaler profile not found' });
     }
 
-    await prisma.product.delete({
-      where: { id: Number(id), wholesalerId: wholesalerProfile.id }
-    });
-
-    res.json({ success: true, message: 'Product deleted successfully' });
+    try {
+      await prisma.product.delete({
+        where: { id: Number(id), wholesalerId: wholesalerProfile.id }
+      });
+      res.json({ success: true, message: 'Product permanently deleted successfully' });
+    } catch (dbError: any) {
+      console.warn(`Hard delete failed for product ${id}. Falling back to soft delete.`);
+      await prisma.product.update({
+        where: { id: Number(id), wholesalerId: wholesalerProfile.id },
+        data: { status: 'deleted' }
+      });
+      res.json({ success: true, message: 'Product soft-deleted successfully due to active constraints' });
+    }
   } catch (error: any) {
     console.error('❌ Error deleting product:', error);
     res.status(500).json({ error: error.message });
