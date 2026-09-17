@@ -252,8 +252,13 @@ export const checkCardBalance = async (req: AuthRequest, res: Response) => {
             return res.status(400).json({ success: false, error: 'Card UID is required' });
         }
 
-        const card = await prisma.nfcCard.findUnique({
-            where: { uid: card_uid },
+        const card = await prisma.nfcCard.findFirst({
+            where: {
+                OR: [
+                    { uid: card_uid },
+                    { cardNumber: card_uid }
+                ]
+            },
             include: { consumerProfile: true }
         });
 

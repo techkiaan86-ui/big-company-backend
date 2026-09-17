@@ -3992,6 +3992,7 @@ export const getPaymentAuditLogs = async (req: AuthRequest, res: Response) => {
       return {
         id: sale.id.toString(),
         cardId: sale.meterId || card?.uid || 'N/A', // Use meterId as fallback for card UID if we start storing it there
+        cardNumber: card?.cardNumber || card?.uid || 'N/A',
         orderId: sale.id,
         customerName: sale.consumerProfile?.fullName || sale.consumerProfile?.user?.name || (sale.consumerProfile?.membershipType === 'catering' ? 'Catering' : 'Walk-in Customer'),
         amount: sale.totalAmount,
