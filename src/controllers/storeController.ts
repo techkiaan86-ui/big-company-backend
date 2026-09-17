@@ -850,16 +850,16 @@ export const getMyOrders = async (req: AuthRequest, res: Response) => {
       orderBy: { createdAt: 'desc' }
     });
 
-    const retailerIds = Array.from(new Set(sales.map(s => s.retailerId)));
-    const retailers = await prisma.retailerProfile.findMany({
+    const retailerIds = Array.from(new Set(sales.map(s => s.retailerId).filter(id => id != null)));
+    const retailers = retailerIds.length > 0 ? await prisma.retailerProfile.findMany({
       where: { id: { in: retailerIds } }
-    });
+    }) : [];
 
-    const userIds = retailers.map(r => r.userId);
-    const users = await prisma.user.findMany({
+    const userIds = retailers.map(r => r.userId).filter(id => id != null);
+    const users = userIds.length > 0 ? await prisma.user.findMany({
       where: { id: { in: userIds } },
       select: { id: true, phone: true }
-    });
+    }) : [];
     const userMap = new Map(users.map(u => [u.id, u]));
 
     const retailerMap = new Map(retailers.map(r => [
@@ -871,10 +871,10 @@ export const getMyOrders = async (req: AuthRequest, res: Response) => {
     ]));
 
     // Fetch products separately to prevent Prisma from crashing on deleted products
-    const productIds = Array.from(new Set(sales.flatMap(s => s.saleItems.map(si => si.productId))));
-    const products = await prisma.product.findMany({
+    const productIds = Array.from(new Set(sales.flatMap(s => s.saleItems.map(si => si.productId)).filter(id => id != null)));
+    const products = productIds.length > 0 ? await prisma.product.findMany({
       where: { id: { in: productIds } }
-    });
+    }) : [];
     const productMap = new Map(products.map(p => [p.id, p]));
 
     // 2. Fetch CustomerOrders (Gas/Other)

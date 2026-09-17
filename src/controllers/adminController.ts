@@ -3267,14 +3267,14 @@ export const getCustomerAccountDetails = async (req: AuthRequest, res: Response)
 
     // Supplier chain - find linked retailers from sales
     const linkedRetailers = Array.from(new Set(formattedSales.map(s => s.retailerProfile?.id).filter(Boolean)));
-    const supplierChain = await prisma.retailerProfile.findMany({
+    const supplierChain = linkedRetailers.length > 0 ? await prisma.retailerProfile.findMany({
       where: { id: { in: linkedRetailers as number[] } },
       include: {
         linkedWholesaler: {
           select: { id: true, companyName: true }
         }
       }
-    });
+    }) : [];
 
     res.json({
       success: true,
