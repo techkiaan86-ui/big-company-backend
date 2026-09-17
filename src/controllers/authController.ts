@@ -587,17 +587,12 @@ export const updatePassword = async (req: any, res: Response) => {
 
 export const updatePin = async (req: any, res: Response) => {
   try {
-    const { old_pin, new_pin } = req.body;
+    const { new_pin } = req.body;
     const userId = req.user.id;
 
     const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user || !user.pin) {
+    if (!user) {
       return res.status(404).json({ error: 'User not found' });
-    }
-
-    const isValid = await comparePassword(old_pin, user.pin);
-    if (!isValid) {
-      return res.status(400).json({ error: 'Incorrect current PIN' });
     }
 
     const hashedPin = await hashPassword(new_pin);
