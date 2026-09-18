@@ -292,7 +292,7 @@ export const getInventory = async (req: AuthRequest, res: Response) => {
 
     // 1. Get Retailer's own inventory (and global items)
     const myProducts = await prisma.product.findMany({
-      where: { retailerId: retailerProfile.id, wholesalerId: null },
+      where: { retailerId: retailerProfile.id, wholesalerId: null, status: { not: 'deleted' } },
       orderBy: { name: 'asc' }
     });
 

@@ -1,0 +1,1 @@
+const { PrismaClient } = require('@prisma/client'); const prisma = new PrismaClient(); prisma.product.findMany({ where: { retailerId: { not: null }, wholesalerId: { not: null } } }).then(console.log).finally(() => prisma.$disconnect());
