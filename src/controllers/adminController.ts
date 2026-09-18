@@ -5247,7 +5247,7 @@ export const getProfitInvoiceStats = async (req: AuthRequest, res: Response) => 
       res.json({
         success: true,
         data: {
-          totalOrders: sales.length,
+          totalOrders: sales.filter(s => s.saleItems && s.saleItems.length > 0).length,
           totalRevenue,
           grossProfit: totalRevenue - totalCost,
           gasRewardsGiven,
