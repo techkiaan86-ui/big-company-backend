@@ -119,19 +119,31 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
       .filter(t => t.type !== 'gas_meter_recharge') // gas recharges counted separately via GasTopup
       .reduce((acc, t) => acc + Math.abs(t.amount), 0);
 
-    const walletPaymentMethods = ['wallet', 'dashboard_wallet', 'credit_wallet', 'nfc_card', 'nfc'];
+    const walletPaymentMethods = ['wallet', 'dashboard_wallet', 'credit_wallet', 'nfc_card', 'nfc', 'dashboard', 'credit'];
     
     // Exclude gas-recharge Sales (those with a meterId set) because the same
     // payment is already captured in directGasVolume via the GasTopup table.
     const directSalesVolume = sales
       .filter(s => s.createdAt >= last30d && (lastGasResetDate ? s.createdAt >= lastGasResetDate : true) && (lastProfitResetDate ? s.createdAt >= lastProfitResetDate : true))
-      .filter(s => !walletPaymentMethods.includes(s.paymentMethod))
-      .filter(s => !s.meterId)  // exclude gas recharges already counted in directGasVolume
+      .filter(s => {
+        const pm = (s.paymentMethod || '').toLowerCase().trim().replace(/ /g, '_');
+        return !walletPaymentMethods.includes(pm);
+      })
+      .filter(s => {
+        // Exclude gas recharges (which have meterId). But allow POS orders that happen to have a meterId 
+        // (Mobile money uses meterId to store 'POS-xxx' or 'ORD-xxx')
+        const isMobileMoney = ['mobile_money', 'momo', 'mtn', 'airtel'].includes((s.paymentMethod || '').toLowerCase().trim());
+        const hasPosOrOrdRef = s.meterId && (s.meterId.startsWith('POS-') || s.meterId.startsWith('ORD-'));
+        return !s.meterId || isMobileMoney || hasPosOrOrdRef;
+      })
       .reduce((acc, s) => acc + s.totalAmount, 0);
 
     const wholesaleOrdersVolume = wholesaleOrders
       .filter(o => o.createdAt >= last30d && (lastGasResetDate ? o.createdAt >= lastGasResetDate : true) && (lastProfitResetDate ? o.createdAt >= lastProfitResetDate : true))
-      .filter(o => !walletPaymentMethods.includes(o.paymentMethod))
+      .filter(o => {
+        const pm = (o.paymentMethod || '').toLowerCase().trim().replace(/ /g, '_');
+        return !walletPaymentMethods.includes(pm);
+      })
       .reduce((acc, o) => acc + o.totalAmount, 0);
 
     // Calculate direct gas volume (GasTopups not paid via wallet)
