@@ -1152,7 +1152,7 @@ export const createSale = async (req: AuthRequest, res: Response) => {
       }
 
       // Log Transaction if linked to consumer
-      if (consumerId && (['wallet', 'dashboard_wallet', 'credit_wallet', 'nfc'].includes(payment_method))) {
+      if (consumerId && (['wallet', 'dashboard_wallet', 'credit_wallet'].includes(payment_method))) {
         const { wallet_type } = payment_details || {};
         const walletType = (payment_method === 'credit_wallet' || wallet_type === 'credit') ? 'credit_wallet' : 'dashboard_wallet';
         const wallet = await prisma.wallet.findFirst({

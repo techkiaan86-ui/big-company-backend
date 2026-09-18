@@ -242,20 +242,20 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
     const totalRewardsPoints = Math.round(gasRewardsSum._sum.units || 0);
 
     // 10. System-wide Inventory (Stock & evaluated cost value)
-    const allProducts = await prisma.product.findMany();
+    const allProducts = await prisma.product.findMany({
+      where: { status: { not: 'deleted' } }
+    });
     const totalProductsCount = allProducts.length;
-    const totalInventoryValue = Math.round(
-      allProducts.reduce((sum, p) => {
-        if (p.retailerId !== null) {
-          return sum + (p.stock * (p.costPrice || 0));
-        }
-        if (p.wholesalerId !== null) {
-          const cost = p.supplierCost !== null && p.supplierCost !== undefined && p.supplierCost > 0 ? p.supplierCost : (p.costPrice || 0);
-          return sum + (p.stock * cost);
-        }
-        return sum;
-      }, 0)
-    );
+    const totalInventoryValue = allProducts.reduce((sum, p) => {
+      if (p.retailerId !== null) {
+        return sum + (p.stock * (p.costPrice || 0));
+      }
+      if (p.wholesalerId !== null) {
+        const cost = p.supplierCost !== null && p.supplierCost !== undefined && p.supplierCost > 0 ? p.supplierCost : (p.costPrice || 0);
+        return sum + (p.stock * cost);
+      }
+      return sum;
+    }, 0);
 
     // Recent Activity - Merge Sales, New Customers, Loans, and Gas Topups
     const [recentSalesRaw, recentConsumers, recentLoansRaw, recentGasRaw] = await Promise.all([
@@ -443,7 +443,7 @@ export const getReports = async (req: AuthRequest, res: Response) => {
     const [retailerTotal, wholesalerTotal, productTotal, customerTotal, loans, retailerCredits] = await Promise.all([
       prisma.retailerProfile.count(),
       prisma.wholesalerProfile.count(),
-      prisma.product.count(),
+      prisma.product.count({ where: { status: { not: 'deleted' } } }),
       prisma.consumerProfile.count(),
       prisma.loan.findMany(),
       prisma.retailerCredit.findMany()
