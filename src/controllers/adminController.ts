@@ -151,29 +151,41 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
 
     const totalVolume = Math.round(walletVolume + directSalesVolume + wholesaleOrdersVolume + gasVolume);
 
-    // 4. Loans (Include both customer loans and retailer credit loans)
+    // 4. Loans (Include both customer loans and retailer stock loans)
     const loans = await prisma.loan.findMany();
-    const retailerCredits = await prisma.retailerCredit.findMany();
+    const retailerLoans = await prisma.retailerLoan.findMany();
+    const systemConfig = await prisma.systemConfig.findFirst();
+    const customerRate = Number(systemConfig?.customerLoanInterest) || 10;
 
-    const loanTotal = loans.length + retailerCredits.length;
-    const loanPending = loans.filter(l => l.status === 'pending').length;
-    // Active loans = customer active loans + retailers with outstanding credit balance
-    const loanActive = loans.filter(l => l.status === 'active' || l.status === 'approved').length + retailerCredits.filter(r => r.usedCredit > 0).length;
-    const loanPaid = loans.filter(l => l.status === 'paid' || l.status === 'repaid').length + retailerCredits.filter(r => r.usedCredit === 0).length;
-    const loanDefaulted = loans.filter(l => l.status === 'defaulted' || l.status === 'overdue').length;
+    const loanTotal = loans.length + retailerLoans.length;
+    const loanPending = loans.filter(l => l.status === 'pending').length + retailerLoans.filter(l => l.status === 'pending').length;
+    // Active loans = customer active loans + retailer active stock loans
+    const loanActive = loans.filter(l => l.status === 'active' || l.status === 'approved').length + retailerLoans.filter(l => l.status === 'active' || l.status === 'approved').length;
+    const loanPaid = loans.filter(l => l.status === 'paid' || l.status === 'repaid').length + retailerLoans.filter(l => l.status === 'paid' || l.status === 'repaid').length;
+    const loanDefaulted = loans.filter(l => l.status === 'defaulted' || l.status === 'overdue').length + retailerLoans.filter(l => l.status === 'defaulted' || l.status === 'overdue').length;
 
-    // Calculate actual outstanding balances (principal - repayments) + retailer outstanding credit balances
+    // Calculate actual outstanding balances (total repayable - repayments) + retailer loan remaining amounts
     const customerLoanRepayments = await prisma.walletTransaction.findMany({
       where: { type: 'loan_repayment_replenish' }
     });
+    
     const customerLoanOutstanding = loans.reduce((acc, l) => {
       if (l.status === 'active' || l.status === 'approved' || l.status === 'defaulted' || l.status === 'overdue') {
+        const interestAmount = Math.round(l.amount * (customerRate / 100));
+        const totalRepayable = l.amount + interestAmount;
         const repayments = customerLoanRepayments.filter(r => r.reference === l.id.toString()).reduce((sum, r) => sum + r.amount, 0);
-        return acc + Math.max(0, l.amount - repayments);
+        return acc + Math.max(0, totalRepayable - repayments);
       }
       return acc;
     }, 0);
-    const retailerOutstanding = retailerCredits.reduce((acc, r) => acc + r.usedCredit, 0);
+    
+    const retailerOutstanding = retailerLoans.reduce((acc, l) => {
+      if (l.status === 'active' || l.status === 'approved' || l.status === 'defaulted' || l.status === 'overdue') {
+        return acc + Math.max(0, l.remainingAmount || 0);
+      }
+      return acc;
+    }, 0);
+    
     const outstandingAmount = Math.round(customerLoanOutstanding + retailerOutstanding);
 
     // 5. Gas (using GasTopup or Sale with gas category)
