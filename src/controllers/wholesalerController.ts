@@ -61,7 +61,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
       }),
       // All products for inventory value
       prisma.product.findMany({
-        where: { wholesalerId: wholesalerProfile.id }
+        where: { wholesalerId: wholesalerProfile.id, status: { not: 'deleted' } }
       }),
       // Pending credit requests
       prisma.creditRequest.findMany({

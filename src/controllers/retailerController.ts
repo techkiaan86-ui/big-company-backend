@@ -60,7 +60,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
         }
       }),
       prisma.product.findMany({
-        where: { retailerId: retailerProfile.id, wholesalerId: null }
+        where: { retailerId: retailerProfile.id, wholesalerId: null, status: { not: 'deleted' } }
       }),
       // Pending Orders (to wholesalers)
       prisma.order.findMany({
