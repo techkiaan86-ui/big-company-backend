@@ -54,6 +54,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
       prisma.sale.findMany({
         where: {
           retailerId: retailerProfile.id,
+          status: { not: 'cancelled' },
           saleItems: { some: {} },
           ...(dateFilter ? { createdAt: dateFilter } : {})
         }
