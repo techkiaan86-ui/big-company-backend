@@ -588,6 +588,7 @@ export const getReports = async (req: AuthRequest, res: Response) => {
 export const getCustomers = async (req: AuthRequest, res: Response) => {
   try {
     const customers = await prisma.consumerProfile.findMany({
+      where: { user: { role: 'consumer' } },
       include: {
         user: true,
         wallets: true,
