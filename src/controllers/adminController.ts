@@ -165,6 +165,15 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
       .filter(t => lastGasResetDate ? t.createdAt >= lastGasResetDate : true)
       .filter(t => t.type === 'credit_repayment' || t.type === 'loan_repayment_replenish')
       .filter(t => t.amount > 0)
+      .filter(t => {
+        // Wallet loan repayments generate BOTH a negative 'debit' (caught in walletVolume) and a positive 'loan_repayment_replenish'.
+        // To avoid double-counting, only include 'loan_repayment_replenish' if it was done via Mobile Money (MoMo).
+        // MoMo references start with 'CREPAY-'. Wallet references are just the loan ID.
+        if (t.type === 'loan_repayment_replenish') {
+          return t.reference && t.reference.startsWith('CREPAY-');
+        }
+        return true; // Keep all 'credit_repayment' (retailers) as they don't generate negative debits
+      })
       .reduce((acc, t) => acc + t.amount, 0);
 
     const totalVolume = Math.round(walletVolume + directSalesVolume + wholesaleOrdersVolume + gasVolume + creditRepaymentsVolume);
