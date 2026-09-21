@@ -67,6 +67,19 @@ export const updateWholesalerProfile = async (req: AuthRequest, res: Response) =
                     ...(email && { email })
                 }
             });
+
+            // Sync gasRewardWalletId if phone changed
+            if (phone) {
+                const duplicate = await prisma.consumerProfile.findFirst({
+                    where: { gasRewardWalletId: phone, userId: { not: req.user!.id } }
+                });
+                if (!duplicate) {
+                    await prisma.consumerProfile.updateMany({
+                        where: { userId: req.user!.id },
+                        data: { gasRewardWalletId: phone }
+                    });
+                }
+            }
         }
 
         // Update WholesalerProfile

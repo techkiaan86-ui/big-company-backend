@@ -2622,6 +2622,19 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
           ...(phone && { phone })
         }
       });
+
+      // Sync gasRewardWalletId if phone changed
+      if (phone) {
+        const duplicate = await prisma.consumerProfile.findFirst({
+          where: { gasRewardWalletId: phone, userId: { not: userId as any } }
+        });
+        if (!duplicate) {
+          await prisma.consumerProfile.updateMany({
+            where: { userId: userId as any },
+            data: { gasRewardWalletId: phone }
+          });
+        }
+      }
     }
 
     // Update RetailerProfile model

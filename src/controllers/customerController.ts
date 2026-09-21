@@ -157,6 +157,19 @@ export const updateCustomerProfile = async (req: AuthRequest, res: Response) => 
                     ...(full_name && { name: full_name })
                 }
             });
+
+            // Sync gasRewardWalletId if phone changed
+            if (phone) {
+                const duplicate = await prisma.consumerProfile.findFirst({
+                    where: { gasRewardWalletId: phone, userId: { not: userId } }
+                });
+                if (!duplicate) {
+                    await prisma.consumerProfile.updateMany({
+                        where: { userId },
+                        data: { gasRewardWalletId: phone }
+                    });
+                }
+            }
         }
 
         // Update consumer profile fields
