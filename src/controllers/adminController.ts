@@ -121,8 +121,8 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
 
     const walletPaymentMethods = ['wallet', 'dashboard_wallet', 'credit_wallet', 'nfc_card', 'nfc', 'dashboard', 'credit'];
     
-    // Exclude gas-recharge Sales (those with a meterId set) because the same
-    // payment is already captured in directGasVolume via the GasTopup table.
+    // Exclude gas-recharge Sales because the same payment is already captured 
+    // in directGasVolume via the GasTopup table.
     const directSalesVolume = sales
       .filter(s => s.createdAt >= last30d && (lastGasResetDate ? s.createdAt >= lastGasResetDate : true) && (lastProfitResetDate ? s.createdAt >= lastProfitResetDate : true))
       .filter(s => {
@@ -130,20 +130,18 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
         return !walletPaymentMethods.includes(pm);
       })
       .filter(s => {
-        // Exclude gas recharges (which have meterId). But allow POS orders that happen to have a meterId 
-        // (Mobile money uses meterId to store 'POS-xxx' or 'ORD-xxx')
-        const isMobileMoney = ['mobile_money', 'momo', 'mtn', 'airtel'].includes((s.paymentMethod || '').toLowerCase().trim());
+        // Exclude gas recharges (which either have a meterId like '2510...' or no saleItems).
+        // A valid direct sale must have a POS/ORD reference, have saleItems, or be a USSD order.
         const hasPosOrOrdRef = s.meterId && (s.meterId.startsWith('POS-') || s.meterId.startsWith('ORD-'));
-        return !s.meterId || isMobileMoney || hasPosOrOrdRef;
+        const hasSaleItems = s.saleItems && s.saleItems.length > 0;
+        const isUssdOrder = s.paymentMethod === 'ussd_callback';
+        
+        return hasPosOrOrdRef || hasSaleItems || isUssdOrder;
       })
       .reduce((acc, s) => acc + s.totalAmount, 0);
 
     const wholesaleOrdersVolume = wholesaleOrders
       .filter(o => o.createdAt >= last30d && (lastGasResetDate ? o.createdAt >= lastGasResetDate : true) && (lastProfitResetDate ? o.createdAt >= lastProfitResetDate : true))
-      .filter(o => {
-        const pm = (o.paymentMethod || '').toLowerCase().trim().replace(/ /g, '_');
-        return !walletPaymentMethods.includes(pm);
-      })
       .reduce((acc, o) => acc + o.totalAmount, 0);
 
     // Calculate direct gas volume (GasTopups not paid via wallet)
@@ -161,7 +159,15 @@ export const getDashboard = async (req: AuthRequest, res: Response) => {
       .filter(g => lastGasResetDate ? g.createdAt >= lastGasResetDate : true)
       .reduce((acc, g) => acc + g.amount, 0);
 
-    const totalVolume = Math.round(walletVolume + directSalesVolume + wholesaleOrdersVolume + gasVolume);
+    // Calculate trackable credit repayments via Mobile Money 
+    // (Retailer loan repayments and order credit repayments create positive WalletTransaction amounts)
+    const creditRepaymentsVolume = txs
+      .filter(t => lastGasResetDate ? t.createdAt >= lastGasResetDate : true)
+      .filter(t => t.type === 'credit_repayment' || t.type === 'loan_repayment_replenish')
+      .filter(t => t.amount > 0)
+      .reduce((acc, t) => acc + t.amount, 0);
+
+    const totalVolume = Math.round(walletVolume + directSalesVolume + wholesaleOrdersVolume + gasVolume + creditRepaymentsVolume);
 
     // 4. Loans (Include both customer loans and retailer stock loans)
     const loans = await prisma.loan.findMany();
