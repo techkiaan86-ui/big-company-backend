@@ -2768,9 +2768,18 @@ export const blockNFCCard = async (req: AuthRequest, res: Response) => {
 export const activateNFCCard = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
+    
+    // First find the card to see if it's assigned to a customer
+    const currentCard = await prisma.nfcCard.findUnique({ where: { id: Number(id) } });
+    if (!currentCard) return res.status(404).json({ success: false, error: 'Card not found' });
+    
+    // If assigned to a customer, activating it should make it 'active'. 
+    // If not assigned, it stays 'available' in inventory.
+    const newStatus = currentCard.consumerId ? 'active' : 'available';
+
     const card = await prisma.nfcCard.update({
       where: { id: Number(id) },
-      data: { status: 'available' }
+      data: { status: newStatus }
     });
     res.json({ success: true, card });
   } catch (error: any) {
