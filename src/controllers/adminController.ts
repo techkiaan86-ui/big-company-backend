@@ -1425,6 +1425,18 @@ export const updateRetailer = async (req: AuthRequest, res: Response) => {
           isActive: status === 'active'
         }
       });
+
+      if (phone) {
+        const duplicate = await prisma.consumerProfile.findFirst({
+          where: { gasRewardWalletId: phone, userId: { not: retailer.userId } }
+        });
+        if (!duplicate) {
+          await prisma.consumerProfile.updateMany({
+            where: { userId: retailer.userId },
+            data: { gasRewardWalletId: phone }
+          });
+        }
+      }
     }
 
     res.json({ success: true, message: 'Retailer updated' });
@@ -1731,9 +1743,22 @@ export const updateCustomer = async (req: AuthRequest, res: Response) => {
       }
     });
 
+    let gasRewardWalletIdUpdate: string | undefined = undefined;
+    if (phone) {
+      const duplicate = await prisma.consumerProfile.findFirst({
+        where: { gasRewardWalletId: phone, userId: { not: profile.userId } }
+      });
+      if (!duplicate) {
+        gasRewardWalletIdUpdate = phone;
+      }
+    }
+
     await prisma.consumerProfile.update({
       where: { id: Number(id) },
-      data: { fullName: `${firstName} ${lastName}` }
+      data: { 
+        fullName: `${firstName} ${lastName}`,
+        ...(gasRewardWalletIdUpdate && { gasRewardWalletId: gasRewardWalletIdUpdate })
+      }
     });
 
     res.json({ success: true, message: 'Customer updated' });
@@ -1870,6 +1895,11 @@ export const deleteCustomer = async (req: AuthRequest, res: Response) => {
       // 7.5 Delete Sale Items
       prisma.saleItem.deleteMany({
         where: { sale: { consumerId: Number(id) } }
+      }),
+      // 7.6 Remove saleId from GasRewards linked to this consumer's sales to prevent FK errors
+      prisma.gasReward.updateMany({
+        where: { sale: { consumerId: Number(id) } },
+        data: { saleId: null }
       }),
       // 8. Delete Sales (if they belong to this consumer)
       prisma.sale.deleteMany({ where: { consumerId: Number(id) } }),
