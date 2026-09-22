@@ -1450,12 +1450,69 @@ export const deleteRetailer = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const retailer = await prisma.retailerProfile.findUnique({ where: { id: Number(id) } });
+    
     if (retailer) {
-      // Delete profile first to satisfy FK
-      await prisma.retailerProfile.delete({ where: { id: Number(id) } });
-      // Then delete user
-      await prisma.user.delete({ where: { id: retailer.userId } });
+      const consumerProfile = await prisma.consumerProfile.findFirst({
+        where: { userId: retailer.userId },
+        include: { wallets: true, gasMeters: { select: { id: true } } }
+      });
+
+      const transactionOps: any[] = [];
+
+      // If they have an auto-generated ConsumerProfile, clean it up first
+      if (consumerProfile) {
+        transactionOps.push(
+          prisma.walletTransaction.deleteMany({
+            where: { walletId: { in: consumerProfile.wallets.map(w => w.id) } }
+          }),
+          prisma.wallet.deleteMany({ where: { consumerId: consumerProfile.id } }),
+          prisma.gasTopup.deleteMany({
+            where: {
+              OR: [
+                { consumerId: consumerProfile.id },
+                { meterId: { in: consumerProfile.gasMeters.map(m => m.id) } }
+              ]
+            }
+          }),
+          prisma.gasReward.deleteMany({ where: { consumerId: consumerProfile.id } }),
+          prisma.gasMeter.deleteMany({ where: { consumerId: consumerProfile.id } }),
+          prisma.customerOrder.deleteMany({ where: { consumerId: consumerProfile.id } }),
+          prisma.loan.deleteMany({ where: { consumerId: consumerProfile.id } }),
+          prisma.nfcCard.updateMany({
+            where: { consumerId: consumerProfile.id },
+            data: { consumerId: null, status: 'inactive' }
+          }),
+          prisma.saleItem.deleteMany({
+            where: { sale: { consumerId: consumerProfile.id } }
+          }),
+          prisma.gasReward.updateMany({
+            where: { sale: { consumerId: consumerProfile.id } },
+            data: { saleId: null }
+          }),
+          prisma.sale.deleteMany({ where: { consumerId: consumerProfile.id } }),
+          prisma.consumerSettings.deleteMany({ where: { consumerId: consumerProfile.id } }),
+          prisma.consumerProfile.delete({ where: { id: consumerProfile.id } })
+        );
+      }
+
+      // Delete the Retailer profile
+      transactionOps.push(prisma.retailerProfile.delete({ where: { id: Number(id) } }));
+
+      // Delete Messages and Notifications
+      transactionOps.push(
+        prisma.message.deleteMany({
+          where: { OR: [{ senderId: retailer.userId }, { receiverId: retailer.userId }] }
+        }) as any,
+        prisma.notification.deleteMany({ where: { userId: retailer.userId } }) as any
+      );
+
+      // Finally delete the User account
+      transactionOps.push(prisma.user.delete({ where: { id: retailer.userId } }) as any);
+
+      // Execute all ops safely in a single transaction
+      await prisma.$transaction(transactionOps);
     }
+    
     res.json({ success: true, message: 'Retailer deleted' });
   } catch (error: any) {
     console.error('Delete Retailer Error:', error);
@@ -1572,12 +1629,69 @@ export const deleteWholesaler = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const wholesaler = await prisma.wholesalerProfile.findUnique({ where: { id: Number(id) } });
+    
     if (wholesaler) {
-      // Delete profile first to satisfy FK
-      await prisma.wholesalerProfile.delete({ where: { id: Number(id) } });
-      // Then delete user
-      await prisma.user.delete({ where: { id: wholesaler.userId } });
+      const consumerProfile = await prisma.consumerProfile.findFirst({
+        where: { userId: wholesaler.userId },
+        include: { wallets: true, gasMeters: { select: { id: true } } }
+      });
+
+      const transactionOps: any[] = [];
+
+      // If they have an auto-generated ConsumerProfile, clean it up first
+      if (consumerProfile) {
+        transactionOps.push(
+          prisma.walletTransaction.deleteMany({
+            where: { walletId: { in: consumerProfile.wallets.map(w => w.id) } }
+          }),
+          prisma.wallet.deleteMany({ where: { consumerId: consumerProfile.id } }),
+          prisma.gasTopup.deleteMany({
+            where: {
+              OR: [
+                { consumerId: consumerProfile.id },
+                { meterId: { in: consumerProfile.gasMeters.map(m => m.id) } }
+              ]
+            }
+          }),
+          prisma.gasReward.deleteMany({ where: { consumerId: consumerProfile.id } }),
+          prisma.gasMeter.deleteMany({ where: { consumerId: consumerProfile.id } }),
+          prisma.customerOrder.deleteMany({ where: { consumerId: consumerProfile.id } }),
+          prisma.loan.deleteMany({ where: { consumerId: consumerProfile.id } }),
+          prisma.nfcCard.updateMany({
+            where: { consumerId: consumerProfile.id },
+            data: { consumerId: null, status: 'inactive' }
+          }),
+          prisma.saleItem.deleteMany({
+            where: { sale: { consumerId: consumerProfile.id } }
+          }),
+          prisma.gasReward.updateMany({
+            where: { sale: { consumerId: consumerProfile.id } },
+            data: { saleId: null }
+          }),
+          prisma.sale.deleteMany({ where: { consumerId: consumerProfile.id } }),
+          prisma.consumerSettings.deleteMany({ where: { consumerId: consumerProfile.id } }),
+          prisma.consumerProfile.delete({ where: { id: consumerProfile.id } })
+        );
+      }
+
+      // Delete the Wholesaler profile
+      transactionOps.push(prisma.wholesalerProfile.delete({ where: { id: Number(id) } }));
+
+      // Delete Messages and Notifications
+      transactionOps.push(
+        prisma.message.deleteMany({
+          where: { OR: [{ senderId: wholesaler.userId }, { receiverId: wholesaler.userId }] }
+        }) as any,
+        prisma.notification.deleteMany({ where: { userId: wholesaler.userId } }) as any
+      );
+
+      // Finally delete the User account
+      transactionOps.push(prisma.user.delete({ where: { id: wholesaler.userId } }) as any);
+
+      // Execute all ops safely in a single transaction
+      await prisma.$transaction(transactionOps);
     }
+    
     res.json({ success: true, message: 'Wholesaler deleted' });
   } catch (error: any) {
     console.error('Delete Wholesaler Error:', error);
@@ -2382,13 +2496,64 @@ export const deleteEmployee = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'Employee not found' });
     }
 
-    // Delete User (Cascade will handle profile deletion if configured, but let's be explicit or rely on schema)
-    // In our updated schema we added onDelete: Cascade to the relation.
-    // So deleting the User deletes the Profile.
-
-    await prisma.user.delete({
-      where: { id: profile.userId }
+    // Check for ConsumerProfile and cascade delete if exists
+    const consumerProfile = await prisma.consumerProfile.findFirst({
+      where: { userId: profile.userId },
+      include: { wallets: true, gasMeters: { select: { id: true } } }
     });
+
+    const transactionOps: any[] = [];
+
+    if (consumerProfile) {
+      transactionOps.push(
+        prisma.walletTransaction.deleteMany({
+          where: { walletId: { in: consumerProfile.wallets.map(w => w.id) } }
+        }),
+        prisma.wallet.deleteMany({ where: { consumerId: consumerProfile.id } }),
+        prisma.gasTopup.deleteMany({
+          where: {
+            OR: [
+              { consumerId: consumerProfile.id },
+              { meterId: { in: consumerProfile.gasMeters.map(m => m.id) } }
+            ]
+          }
+        }),
+        prisma.gasReward.deleteMany({ where: { consumerId: consumerProfile.id } }),
+        prisma.gasMeter.deleteMany({ where: { consumerId: consumerProfile.id } }),
+        prisma.customerOrder.deleteMany({ where: { consumerId: consumerProfile.id } }),
+        prisma.loan.deleteMany({ where: { consumerId: consumerProfile.id } }),
+        prisma.nfcCard.updateMany({
+          where: { consumerId: consumerProfile.id },
+          data: { consumerId: null, status: 'inactive' }
+        }),
+        prisma.saleItem.deleteMany({
+          where: { sale: { consumerId: consumerProfile.id } }
+        }),
+        prisma.gasReward.updateMany({
+          where: { sale: { consumerId: consumerProfile.id } },
+          data: { saleId: null }
+        }),
+        prisma.sale.deleteMany({ where: { consumerId: consumerProfile.id } }),
+        prisma.consumerSettings.deleteMany({ where: { consumerId: consumerProfile.id } }),
+        prisma.consumerProfile.delete({ where: { id: consumerProfile.id } })
+      );
+    }
+
+    // Delete EmployeeProfile explicitly (just to be safe)
+    transactionOps.push(prisma.employeeProfile.delete({ where: { id: Number(id) } }));
+
+    // Delete Messages and Notifications
+    transactionOps.push(
+      prisma.message.deleteMany({
+        where: { OR: [{ senderId: profile.userId }, { receiverId: profile.userId }] }
+      }) as any,
+      prisma.notification.deleteMany({ where: { userId: profile.userId } }) as any
+    );
+
+    // Finally delete the User
+    transactionOps.push(prisma.user.delete({ where: { id: profile.userId } }) as any);
+
+    await prisma.$transaction(transactionOps);
 
     res.json({ success: true, message: 'Employee deleted successfully' });
   } catch (error: any) {
