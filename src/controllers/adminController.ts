@@ -1863,15 +1863,14 @@ export const deleteCustomer = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     const profile = await prisma.consumerProfile.findUnique({
       where: { id: Number(id) },
-      include: { wallets: true }
+      include: { wallets: true, gasMeters: { select: { id: true } }, user: { select: { role: true } } }
     });
 
     if (!profile) {
       return res.status(404).json({ success: false, message: 'Customer profile not found' });
     }
 
-    // Manual Cascade Deletion
-    await prisma.$transaction([
+    const transactionOps: any[] = [
       // 1. Delete Wallet Transactions
       prisma.walletTransaction.deleteMany({
         where: { walletId: { in: profile.wallets.map(w => w.id) } }
@@ -1879,7 +1878,14 @@ export const deleteCustomer = async (req: AuthRequest, res: Response) => {
       // 2. Delete Wallets
       prisma.wallet.deleteMany({ where: { consumerId: Number(id) } }),
       // 3. Delete Gas Topups and Rewards
-      prisma.gasTopup.deleteMany({ where: { consumerId: Number(id) } }),
+      prisma.gasTopup.deleteMany({
+        where: {
+          OR: [
+            { consumerId: Number(id) },
+            { meterId: { in: profile.gasMeters.map(m => m.id) } }
+          ]
+        }
+      }),
       prisma.gasReward.deleteMany({ where: { consumerId: Number(id) } }),
       // 4. Delete Gas Meters
       prisma.gasMeter.deleteMany({ where: { consumerId: Number(id) } }),
@@ -1905,16 +1911,23 @@ export const deleteCustomer = async (req: AuthRequest, res: Response) => {
       prisma.sale.deleteMany({ where: { consumerId: Number(id) } }),
       // 9. Delete Settings
       prisma.consumerSettings.deleteMany({ where: { consumerId: Number(id) } }),
-      // 10. Delete Messages and Notifications
-      prisma.message.deleteMany({
-        where: { OR: [{ senderId: profile.userId }, { receiverId: profile.userId }] }
-      }),
-      prisma.notification.deleteMany({ where: { userId: profile.userId } }),
       // 11. Delete the profile itself
-      prisma.consumerProfile.delete({ where: { id: Number(id) } }),
-      // 12. Finally delete the User record
-      prisma.user.delete({ where: { id: profile.userId } })
-    ]);
+      prisma.consumerProfile.delete({ where: { id: Number(id) } })
+    ];
+
+    if (profile.user?.role === 'consumer') {
+      // 10. Delete Messages and Notifications
+      transactionOps.push(
+        prisma.message.deleteMany({
+          where: { OR: [{ senderId: profile.userId }, { receiverId: profile.userId }] }
+        }) as any,
+        prisma.notification.deleteMany({ where: { userId: profile.userId } }) as any,
+        // 12. Finally delete the User record
+        prisma.user.delete({ where: { id: profile.userId } }) as any
+      );
+    }
+
+    await prisma.$transaction(transactionOps);
 
     res.json({ success: true, message: 'Customer and all associated data deleted successfully' });
   } catch (error: any) {
