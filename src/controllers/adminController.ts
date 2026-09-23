@@ -2010,7 +2010,13 @@ export const deleteCustomer = async (req: AuthRequest, res: Response) => {
       // 7. Unlink or delete NFC cards (unlinking is safer if cards are reusable)
       prisma.nfcCard.updateMany({
         where: { consumerId: Number(id) },
-        data: { consumerId: null, status: 'inactive' }
+        data: { 
+          consumerId: null, 
+          status: 'inactive',
+          cardholderName: null,
+          email: null,
+          phone: null
+        }
       }),
       // 7.5 Delete Sale Items
       prisma.saleItem.deleteMany({
@@ -2838,19 +2844,36 @@ export const adminLinkCard = async (req: AuthRequest, res: Response) => {
 
     // Try to find the consumer profile either by userId or consumerProfile id
     let consumerId = null;
-    const profileByUserId = await prisma.consumerProfile.findUnique({ where: { userId: Number(userId) } });
+    let cardholderName = null;
+    
+    const profileByUserId = await prisma.consumerProfile.findUnique({ 
+      where: { userId: Number(userId) },
+      include: { user: true }
+    });
+    
     if (profileByUserId) {
       consumerId = profileByUserId.id;
+      cardholderName = profileByUserId.fullName || profileByUserId.user?.name || null;
     } else {
-      const profileById = await prisma.consumerProfile.findUnique({ where: { id: Number(userId) } });
-      if (profileById) consumerId = profileById.id;
+      const profileById = await prisma.consumerProfile.findUnique({ 
+        where: { id: Number(userId) },
+        include: { user: true }
+      });
+      if (profileById) {
+        consumerId = profileById.id;
+        cardholderName = profileById.fullName || profileById.user?.name || null;
+      }
     }
 
     if (!consumerId) return res.status(404).json({ success: false, error: 'Customer profile not found' });
     
     await prisma.nfcCard.update({
       where: { id: Number(id) },
-      data: { consumerId: consumerId, status: 'active' }
+      data: { 
+        consumerId: consumerId, 
+        status: 'active',
+        cardholderName: cardholderName
+      }
     });
     
     res.json({ success: true, message: 'Card linked successfully' });
