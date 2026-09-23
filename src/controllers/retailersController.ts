@@ -77,7 +77,7 @@ export const getRetailers = async (req: AuthRequest, res: Response) => {
         // Format retailers from LinkRequest
         const retailersFromRequests = await Promise.all(approvedRequests.map(async (req) => ({
             ...req.retailer,
-            status: req.retailer.user?.isActive ? 'active' : 'blocked',
+            status: req.retailer.isBlockedByWholesaler ? 'blocked' : (req.retailer.user?.isActive ? 'active' : 'inactive'),
             totalOrders: req.retailer.orders.length,
             totalRevenue: req.retailer.orders.reduce((sum, o) => sum + o.totalAmount, 0),
             creditPaid: await prisma.walletTransaction.aggregate({
@@ -96,7 +96,7 @@ export const getRetailers = async (req: AuthRequest, res: Response) => {
             .filter(r => !retailerIdsFromRequests.has(r.id))
             .map(async (r) => ({
                 ...r,
-                status: r.user?.isActive ? 'active' : 'blocked',
+                status: r.isBlockedByWholesaler ? 'blocked' : (r.user?.isActive ? 'active' : 'inactive'),
                 totalOrders: r.orders.length,
                 totalRevenue: r.orders.reduce((sum, o) => sum + o.totalAmount, 0),
                 creditPaid: await prisma.walletTransaction.aggregate({
