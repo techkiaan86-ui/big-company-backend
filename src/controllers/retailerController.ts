@@ -1712,6 +1712,14 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       });
     }
 
+    if (retailerProfile.isBlockedByWholesaler) {
+      return res.status(403).json({
+        success: false,
+        error: `Your account has been blocked by your wholesaler. Reason: ${retailerProfile.blockedReason || 'No reason provided'}. You cannot place orders.`,
+        isBlocked: true
+      });
+    }
+
     const { items, totalAmount, paymentMethod = 'wallet', phone } = req.body;
 
     if (!items || items.length === 0) {
@@ -2143,6 +2151,13 @@ export const requestCredit = async (req: AuthRequest, res: Response) => {
 
     if (!retailerProfile) {
       return res.status(404).json({ error: 'Retailer profile not found' });
+    }
+
+    if (retailerProfile.isBlockedByWholesaler) {
+      return res.status(403).json({
+        success: false,
+        error: 'Your account has been blocked by your wholesaler. You cannot request credit.'
+      });
     }
 
     const { amount, reason } = req.body;

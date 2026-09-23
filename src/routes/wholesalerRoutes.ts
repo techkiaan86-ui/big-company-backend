@@ -42,6 +42,7 @@ import {
   rejectCreditRequest,
   updateRetailerCreditLimit,
   blockRetailer,
+  unblockRetailer,
   getWholesaleHistory
 } from '../controllers/retailersController';
 import {
@@ -107,7 +108,8 @@ router.get('/retailers/stats', getRetailerStats);
 router.get('/retailers/:id', getRetailerById);
 router.get('/retailers/:id/orders', getRetailerOrdersById);
 router.put('/retailers/:id/credit-limit', updateRetailerCreditLimit);
-router.put('/retailers/:id/status', blockRetailer);
+router.post('/retailers/:id/block', blockRetailer);
+router.post('/retailers/:id/unblock', unblockRetailer);
 
 // Suppliers
 router.get('/supplier-orders', getSupplierOrders);

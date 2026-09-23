@@ -708,9 +708,81 @@ export const updateRetailerCreditLimit = async (req: AuthRequest, res: Response)
     }
 };
 
-// Block/Unblock retailer
+// Block a retailer
 export const blockRetailer = async (req: AuthRequest, res: Response) => {
-    res.json({ success: true, message: 'Status updated successfully' });
+    try {
+        const { id } = req.params;
+        const { reason } = req.body;
+        const parsedRetailerId = parseInt(id);
+
+        const wholesalerProfile = await prisma.wholesalerProfile.findUnique({
+            where: { userId: req.user!.id }
+        });
+
+        if (!wholesalerProfile) {
+            return res.status(404).json({ error: 'Wholesaler profile not found' });
+        }
+
+        const retailer = await prisma.retailerProfile.findUnique({
+            where: { id: parsedRetailerId }
+        });
+
+        if (!retailer || retailer.linkedWholesalerId !== wholesalerProfile.id) {
+            return res.status(403).json({ error: 'You are not authorized to block this retailer' });
+        }
+
+        await prisma.retailerProfile.update({
+            where: { id: parsedRetailerId },
+            data: {
+                isBlockedByWholesaler: true,
+                blockedReason: reason || 'Blocked by wholesaler',
+                blockedAt: new Date()
+            }
+        });
+
+        res.json({ success: true, message: 'Retailer blocked successfully' });
+    } catch (error: any) {
+        console.error('Error blocking retailer:', error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Unblock a retailer
+export const unblockRetailer = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+        const parsedRetailerId = parseInt(id);
+
+        const wholesalerProfile = await prisma.wholesalerProfile.findUnique({
+            where: { userId: req.user!.id }
+        });
+
+        if (!wholesalerProfile) {
+            return res.status(404).json({ error: 'Wholesaler profile not found' });
+        }
+
+        const retailer = await prisma.retailerProfile.findUnique({
+            where: { id: parsedRetailerId }
+        });
+
+        if (!retailer || retailer.linkedWholesalerId !== wholesalerProfile.id) {
+            return res.status(403).json({ error: 'You are not authorized to unblock this retailer' });
+        }
+
+        await prisma.retailerProfile.update({
+            where: { id: parsedRetailerId },
+            data: {
+                isBlockedByWholesaler: false,
+                blockedReason: null,
+                blockedAt: null
+            }
+        });
+
+        res.json({ success: true, message: 'Retailer unblocked successfully' });
+    } catch (error: any) {
+        console.error('Error unblocking retailer:', error);
+        res.status(500).json({ error: error.message });
+    }
 };
 
 // ============================================
