@@ -4836,14 +4836,7 @@ export const saveEmailTemplate = async (req: AuthRequest, res: Response) => {
     const { name, subject, content, description, isActive, portal, triggerName, channel } = req.body;
 
     const SUPPORTED_VARIABLES = [
-      'Customer_name', 'customer_name', 'name', 'retail_name', 'wholesaler_name',
-      'meter_name', 'meter_id', 'amount', 'volume', 'token', 'transaction_id',
-      'tempPass', 'role', 'email', 'productName', 'currentStock', 'threshold',
-      'type', 'balance', 'txRef', 'orderNumber', 'quantity', 'totalAmount',
-      'temp_password', 'attempt_time', 'date', 'month', 'salesCount', 'revenue',
-      'newRetailers', 'newWholesalers', 'lowStockCount', 'offlineMeters', 'period',
-      'action', 'reason', 'reward_amount', 'new_reward_balance', 'new_balance',
-      'status', 'order_id', 'delivery_date', 'customer_id', 'change_time'
+      'retail_name', 'retail_id', 'phone', 'email', 'created_date', 'login_url', 'order_id', 'product', 'quantity', 'wholesaler_name', 'order_date', 'estimated_delivery', 'invoice_no', 'amount', 'delivery_date', 'payment_method', 'balance', 'receipt_url', 'Customer_name', 'customer_name', 'name', 'customer_phone', 'request_date', 'dashboard_url', 'approval_date', 'new_balance', 'transaction_id', 'topup_date', 'month', 'total_sales', 'gross_profit', 'rent', 'tax', 'salary', 'other_deductions', 'net_profit', 'transfer_amount', 'transfer_date', 'report_url', 'request_id', 'credit_amount', 'reason', 'approved_amount', 'interest_rate', 'repayment_period', 'due_date', 'repayment_url', 'paid_amount', 'remaining_balance', 'payment_date', 'date', 'transactions', 'stock_remaining', 'top_product', 'change_time', 'device', 'ip_address', 'remaining_quantity', 'minimum_required', 'restock_url', 'activity', 'time', 'location', 'security_url', 'current_balance', 'minimum_balance', 'topup_url', 'attempt_time', 'ip', 'pending_duration', 'status', 'wholesaler_id', 'retail_phone', 'current_credit_balance', 'supplier_order_id', 'supplier_name', 'expected_delivery', 'supplier_phone', 'supplier_email', 'reference_id', 'request_type', 'customer_id', 'meter_name', 'meter_id', 'volume', 'token', 'temp_password', 'reward_amount', 'new_reward_balance', 'message', 'balance_type', 'action', 'productName', 'currentStock', 'threshold', 'type', 'txRef', 'orderNumber', 'totalAmount', 'salesCount', 'revenue', 'newRetailers', 'newWholesalers', 'lowStockCount', 'offlineMeters', 'period', 'tempPass', 'role', 'frontendUrl'
     ];
 
     // Validate variables in both subject and content
