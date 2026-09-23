@@ -3068,8 +3068,8 @@ export const sendLinkRequest = async (req: AuthRequest, res: Response) => {
           error: 'Your request was already approved. Contact admin if not linked.'
         });
       }
-      // If rejected, allow to send again - update the existing request
-      if (existingRequest.status === 'rejected') {
+      // If rejected or unlinked, allow to send again - update the existing request
+      if (existingRequest.status === 'rejected' || existingRequest.status === 'unlinked') {
         const updatedRequest = await prisma.linkRequest.update({
           where: { id: existingRequest.id },
           data: {
@@ -3083,7 +3083,7 @@ export const sendLinkRequest = async (req: AuthRequest, res: Response) => {
 
         return res.json({
           success: true,
-          message: 'Link request re-sent successfully',
+          message: 'Link request sent successfully',
           request: updatedRequest
         });
       }
