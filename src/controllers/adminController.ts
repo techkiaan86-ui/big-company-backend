@@ -4843,7 +4843,7 @@ export const saveEmailTemplate = async (req: AuthRequest, res: Response) => {
       'temp_password', 'attempt_time', 'date', 'month', 'salesCount', 'revenue',
       'newRetailers', 'newWholesalers', 'lowStockCount', 'offlineMeters', 'period',
       'action', 'reason', 'reward_amount', 'new_reward_balance', 'new_balance',
-      'status'
+      'status', 'order_id', 'delivery_date', 'customer_id', 'change_time'
     ];
 
     // Validate variables in both subject and content
