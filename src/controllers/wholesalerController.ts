@@ -1750,14 +1750,25 @@ export const approveLinkRequest = async (req: AuthRequest, res: Response) => {
     // No need to check if already linked elsewhere - just approve this request
     // The LinkRequest table tracks per-wholesaler approval status
 
-    // Update request status to approved
-    await prisma.linkRequest.update({
-      where: { id: request.id },
-      data: {
-        status: 'approved',
-        respondedAt: new Date()
-      }
-    });
+    // Update request status to approved AND link the retailer
+    await prisma.$transaction([
+      prisma.linkRequest.update({
+        where: { id: request.id },
+        data: {
+          status: 'approved',
+          respondedAt: new Date()
+        }
+      }),
+      prisma.retailerProfile.update({
+        where: { id: request.retailerId },
+        data: {
+          linkedWholesalerId: wholesalerProfile.id,
+          isBlockedByWholesaler: false, // Ensure they start unblocked
+          blockedReason: null,
+          blockedAt: null
+        }
+      })
+    ]);
 
     // Trigger Email Notification (RET-EMAIL-005)
     const { emailQueue } = await import('../queues/email.queue');
