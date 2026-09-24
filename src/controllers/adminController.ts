@@ -1495,8 +1495,29 @@ export const deleteRetailer = async (req: AuthRequest, res: Response) => {
         );
       }
 
-      // Delete the Retailer profile
-      transactionOps.push(prisma.retailerProfile.delete({ where: { id: Number(id) } }));
+      // Clean up Retailer related records safely before deleting the RetailerProfile
+      transactionOps.push(
+        prisma.orderItem.deleteMany({ where: { order: { retailerId: Number(id) } } }),
+        prisma.profitInvoice.deleteMany({ where: { order: { retailerId: Number(id) } } }),
+        prisma.order.deleteMany({ where: { retailerId: Number(id) } }),
+        prisma.gasReward.deleteMany({ where: { sale: { retailerId: Number(id) } } }),
+        prisma.saleItem.deleteMany({ where: { sale: { retailerId: Number(id) } } }),
+        prisma.sale.deleteMany({ where: { retailerId: Number(id) } }),
+        prisma.product.deleteMany({ where: { retailerId: Number(id) } }),
+        prisma.terminal.deleteMany({ where: { branch: { retailerId: Number(id) } } }),
+        prisma.branch.deleteMany({ where: { retailerId: Number(id) } }),
+        prisma.creditRequest.deleteMany({ where: { retailerId: Number(id) } }),
+        prisma.retailerCredit.deleteMany({ where: { retailerId: Number(id) } }),
+        prisma.settlementInvoice.deleteMany({ where: { retailerId: Number(id) } }),
+        prisma.customProfitInvoice.deleteMany({ where: { retailerId: Number(id) } }),
+        prisma.walletTransaction.deleteMany({ where: { retailerId: Number(id) } }),
+        prisma.linkRequest.deleteMany({ where: { retailerId: Number(id) } }),
+        prisma.customerLinkRequest.deleteMany({ where: { retailerId: Number(id) } }),
+        prisma.retailerLoan.deleteMany({ where: { retailerId: Number(id) } }),
+        prisma.nfcCard.updateMany({ where: { retailerId: Number(id) }, data: { retailerId: null } }),
+        prisma.consumerProfile.updateMany({ where: { linkedRetailerId: Number(id) }, data: { linkedRetailerId: null } }),
+        prisma.retailerProfile.delete({ where: { id: Number(id) } })
+      );
 
       // Delete Messages and Notifications
       transactionOps.push(
@@ -1674,8 +1695,20 @@ export const deleteWholesaler = async (req: AuthRequest, res: Response) => {
         );
       }
 
-      // Delete the Wholesaler profile
-      transactionOps.push(prisma.wholesalerProfile.delete({ where: { id: Number(id) } }));
+      // Clean up Wholesaler related records safely before deleting the WholesalerProfile
+      transactionOps.push(
+        prisma.orderItem.deleteMany({ where: { order: { wholesalerId: Number(id) } } }),
+        prisma.profitInvoice.deleteMany({ where: { order: { wholesalerId: Number(id) } } }),
+        prisma.order.deleteMany({ where: { wholesalerId: Number(id) } }),
+        prisma.settlementInvoice.deleteMany({ where: { wholesalerId: Number(id) } }),
+        prisma.customProfitInvoice.deleteMany({ where: { wholesalerId: Number(id) } }),
+        prisma.supplierPayment.deleteMany({ where: { wholesalerId: Number(id) } }),
+        prisma.product.deleteMany({ where: { wholesalerId: Number(id) } }),
+        prisma.supplier.deleteMany({ where: { wholesalerId: Number(id) } }),
+        prisma.linkRequest.deleteMany({ where: { wholesalerId: Number(id) } }),
+        prisma.retailerProfile.updateMany({ where: { linkedWholesalerId: Number(id) }, data: { linkedWholesalerId: null } }),
+        prisma.wholesalerProfile.delete({ where: { id: Number(id) } })
+      );
 
       // Delete Messages and Notifications
       transactionOps.push(

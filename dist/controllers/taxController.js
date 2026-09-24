@@ -31,8 +31,9 @@ const getRetailerTaxes = (req, res) => __awaiter(void 0, void 0, void 0, functio
         }
         const dateFilter = retailer.lastSettlementDate ? { gte: retailer.lastSettlementDate } : undefined;
         // Only retailer's sales to consumers — include 'pending' for USSD orders
+        // Exclude gas meter recharges — they never have saleItems; only product orders do
         const sales = yield prisma.sale.findMany({
-            where: Object.assign({ retailerId: retailer.id, status: { in: ['completed', 'pending_payment', 'pending'] } }, (dateFilter && { createdAt: dateFilter })),
+            where: Object.assign({ retailerId: retailer.id, status: { in: ['completed', 'pending_payment', 'pending'] }, saleItems: { some: {} } }, (dateFilter && { createdAt: dateFilter })),
             include: {
                 saleItems: { include: { product: true } },
                 consumerProfile: true

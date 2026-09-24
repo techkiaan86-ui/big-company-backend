@@ -154,17 +154,26 @@ const getDashboard = (req, res) => __awaiter(void 0, void 0, void 0, function* (
             .filter(t => t.amount < 0)
             .filter(t => t.type !== 'gas_meter_recharge') // gas recharges counted separately via GasTopup
             .reduce((acc, t) => acc + Math.abs(t.amount), 0);
-        const walletPaymentMethods = ['wallet', 'dashboard_wallet', 'credit_wallet', 'nfc_card', 'nfc'];
-        // Exclude gas-recharge Sales (those with a meterId set) because the same
-        // payment is already captured in directGasVolume via the GasTopup table.
+        const walletPaymentMethods = ['wallet', 'dashboard_wallet', 'credit_wallet', 'nfc_card', 'nfc', 'dashboard', 'credit'];
+        // Exclude gas-recharge Sales because the same payment is already captured 
+        // in directGasVolume via the GasTopup table.
         const directSalesVolume = sales
             .filter(s => s.createdAt >= last30d && (lastGasResetDate ? s.createdAt >= lastGasResetDate : true) && (lastProfitResetDate ? s.createdAt >= lastProfitResetDate : true))
-            .filter(s => !walletPaymentMethods.includes(s.paymentMethod))
-            .filter(s => !s.meterId) // exclude gas recharges already counted in directGasVolume
+            .filter(s => {
+            const pm = (s.paymentMethod || '').toLowerCase().trim().replace(/ /g, '_');
+            return !walletPaymentMethods.includes(pm);
+        })
+            .filter(s => {
+            // Exclude gas recharges (which either have a meterId like '2510...' or no saleItems).
+            // A valid direct sale must have a POS/ORD reference, have saleItems, or be a USSD order.
+            const hasPosOrOrdRef = s.meterId && (s.meterId.startsWith('POS-') || s.meterId.startsWith('ORD-'));
+            const hasSaleItems = s.saleItems && s.saleItems.length > 0;
+            const isUssdOrder = s.paymentMethod === 'ussd_callback';
+            return hasPosOrOrdRef || hasSaleItems || isUssdOrder;
+        })
             .reduce((acc, s) => acc + s.totalAmount, 0);
         const wholesaleOrdersVolume = wholesaleOrders
             .filter(o => o.createdAt >= last30d && (lastGasResetDate ? o.createdAt >= lastGasResetDate : true) && (lastProfitResetDate ? o.createdAt >= lastProfitResetDate : true))
-            .filter(o => !walletPaymentMethods.includes(o.paymentMethod))
             .reduce((acc, o) => acc + o.totalAmount, 0);
         // Calculate direct gas volume (GasTopups not paid via wallet)
         const recentGasTopups = yield prisma_1.default.gasTopup.findMany({
@@ -176,28 +185,53 @@ const getDashboard = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         const gasVolume = recentGasTopups
             .filter(g => lastGasResetDate ? g.createdAt >= lastGasResetDate : true)
             .reduce((acc, g) => acc + g.amount, 0);
-        const totalVolume = Math.round(walletVolume + directSalesVolume + wholesaleOrdersVolume + gasVolume);
-        // 4. Loans (Include both customer loans and retailer credit loans)
+        // Calculate trackable credit repayments via Mobile Money 
+        // (Retailer loan repayments and order credit repayments create positive WalletTransaction amounts)
+        const creditRepaymentsVolume = txs
+            .filter(t => lastGasResetDate ? t.createdAt >= lastGasResetDate : true)
+            .filter(t => t.type === 'credit_repayment' || t.type === 'loan_repayment_replenish')
+            .filter(t => t.amount > 0)
+            .filter(t => {
+            // Wallet loan repayments generate BOTH a negative 'debit' (caught in walletVolume) and a positive 'loan_repayment_replenish'.
+            // To avoid double-counting, only include 'loan_repayment_replenish' if it was done via Mobile Money (MoMo).
+            // MoMo references start with 'CREPAY-'. Wallet references are just the loan ID.
+            if (t.type === 'loan_repayment_replenish') {
+                return t.reference && t.reference.startsWith('CREPAY-');
+            }
+            return true; // Keep all 'credit_repayment' (retailers) as they don't generate negative debits
+        })
+            .reduce((acc, t) => acc + t.amount, 0);
+        const totalVolume = Math.round(walletVolume + directSalesVolume + wholesaleOrdersVolume + gasVolume + creditRepaymentsVolume);
+        // 4. Loans (Include both customer loans and retailer stock loans)
         const loans = yield prisma_1.default.loan.findMany();
-        const retailerCredits = yield prisma_1.default.retailerCredit.findMany();
-        const loanTotal = loans.length + retailerCredits.length;
-        const loanPending = loans.filter(l => l.status === 'pending').length;
-        // Active loans = customer active loans + retailers with outstanding credit balance
-        const loanActive = loans.filter(l => l.status === 'active' || l.status === 'approved').length + retailerCredits.filter(r => r.usedCredit > 0).length;
-        const loanPaid = loans.filter(l => l.status === 'paid' || l.status === 'repaid').length + retailerCredits.filter(r => r.usedCredit === 0).length;
-        const loanDefaulted = loans.filter(l => l.status === 'defaulted' || l.status === 'overdue').length;
-        // Calculate actual outstanding balances (principal - repayments) + retailer outstanding credit balances
+        const retailerLoans = yield prisma_1.default.retailerLoan.findMany();
+        const systemConfig = yield prisma_1.default.systemConfig.findFirst();
+        const customerRate = Number(systemConfig === null || systemConfig === void 0 ? void 0 : systemConfig.customerLoanInterest) || 10;
+        const loanTotal = loans.length + retailerLoans.length;
+        const loanPending = loans.filter(l => l.status === 'pending').length + retailerLoans.filter(l => l.status === 'pending').length;
+        // Active loans = customer active loans + retailer active stock loans
+        const loanActive = loans.filter(l => l.status === 'active' || l.status === 'approved').length + retailerLoans.filter(l => l.status === 'active' || l.status === 'approved').length;
+        const loanPaid = loans.filter(l => l.status === 'paid' || l.status === 'repaid').length + retailerLoans.filter(l => l.status === 'paid' || l.status === 'repaid').length;
+        const loanDefaulted = loans.filter(l => l.status === 'defaulted' || l.status === 'overdue').length + retailerLoans.filter(l => l.status === 'defaulted' || l.status === 'overdue').length;
+        // Calculate actual outstanding balances (total repayable - repayments) + retailer loan remaining amounts
         const customerLoanRepayments = yield prisma_1.default.walletTransaction.findMany({
             where: { type: 'loan_repayment_replenish' }
         });
         const customerLoanOutstanding = loans.reduce((acc, l) => {
             if (l.status === 'active' || l.status === 'approved' || l.status === 'defaulted' || l.status === 'overdue') {
+                const interestAmount = Math.round(l.amount * (customerRate / 100));
+                const totalRepayable = l.amount + interestAmount;
                 const repayments = customerLoanRepayments.filter(r => r.reference === l.id.toString()).reduce((sum, r) => sum + r.amount, 0);
-                return acc + Math.max(0, l.amount - repayments);
+                return acc + Math.max(0, totalRepayable - repayments);
             }
             return acc;
         }, 0);
-        const retailerOutstanding = retailerCredits.reduce((acc, r) => acc + r.usedCredit, 0);
+        const retailerOutstanding = retailerLoans.reduce((acc, l) => {
+            if (l.status === 'active' || l.status === 'approved' || l.status === 'defaulted' || l.status === 'overdue') {
+                return acc + Math.max(0, l.remainingAmount || 0);
+            }
+            return acc;
+        }, 0);
         const outstandingAmount = Math.round(customerLoanOutstanding + retailerOutstanding);
         // 5. Gas (using GasTopup or Sale with gas category)
         const gasTopups = yield prisma_1.default.gasTopup.findMany({
@@ -230,9 +264,11 @@ const getDashboard = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         const gasRewardsSum = yield prisma_1.default.gasReward.aggregate({ _sum: { units: true } });
         const totalRewardsPoints = Math.round(gasRewardsSum._sum.units || 0);
         // 10. System-wide Inventory (Stock & evaluated cost value)
-        const allProducts = yield prisma_1.default.product.findMany();
+        const allProducts = yield prisma_1.default.product.findMany({
+            where: { status: { not: 'deleted' } }
+        });
         const totalProductsCount = allProducts.length;
-        const totalInventoryValue = Math.round(allProducts.reduce((sum, p) => {
+        const totalInventoryValue = allProducts.reduce((sum, p) => {
             if (p.retailerId !== null) {
                 return sum + (p.stock * (p.costPrice || 0));
             }
@@ -241,7 +277,7 @@ const getDashboard = (req, res) => __awaiter(void 0, void 0, void 0, function* (
                 return sum + (p.stock * cost);
             }
             return sum;
-        }, 0));
+        }, 0);
         // Recent Activity - Merge Sales, New Customers, Loans, and Gas Topups
         const [recentSalesRaw, recentConsumers, recentLoansRaw, recentGasRaw] = yield Promise.all([
             prisma_1.default.sale.findMany({
@@ -414,7 +450,7 @@ const getReports = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
         const [retailerTotal, wholesalerTotal, productTotal, customerTotal, loans, retailerCredits] = yield Promise.all([
             prisma_1.default.retailerProfile.count(),
             prisma_1.default.wholesalerProfile.count(),
-            prisma_1.default.product.count(),
+            prisma_1.default.product.count({ where: { status: { not: 'deleted' } } }),
             prisma_1.default.consumerProfile.count(),
             prisma_1.default.loan.findMany(),
             prisma_1.default.retailerCredit.findMany()
@@ -552,6 +588,7 @@ exports.getReports = getReports;
 const getCustomers = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const customers = yield prisma_1.default.consumerProfile.findMany({
+            where: { user: { role: 'consumer' } },
             include: {
                 user: true,
                 wallets: true,
@@ -1283,6 +1320,17 @@ const updateRetailer = (req, res) => __awaiter(void 0, void 0, void 0, function*
                     isActive: status === 'active'
                 }
             });
+            if (phone) {
+                const duplicate = yield prisma_1.default.consumerProfile.findFirst({
+                    where: { gasRewardWalletId: phone, userId: { not: retailer.userId } }
+                });
+                if (!duplicate) {
+                    yield prisma_1.default.consumerProfile.updateMany({
+                        where: { userId: retailer.userId },
+                        data: { gasRewardWalletId: phone }
+                    });
+                }
+            }
         }
         res.json({ success: true, message: 'Retailer updated' });
     }
@@ -1297,10 +1345,42 @@ const deleteRetailer = (req, res) => __awaiter(void 0, void 0, void 0, function*
         const { id } = req.params;
         const retailer = yield prisma_1.default.retailerProfile.findUnique({ where: { id: Number(id) } });
         if (retailer) {
-            // Delete profile first to satisfy FK
-            yield prisma_1.default.retailerProfile.delete({ where: { id: Number(id) } });
-            // Then delete user
-            yield prisma_1.default.user.delete({ where: { id: retailer.userId } });
+            const consumerProfile = yield prisma_1.default.consumerProfile.findFirst({
+                where: { userId: retailer.userId },
+                include: { wallets: true, gasMeters: { select: { id: true } } }
+            });
+            const transactionOps = [];
+            // If they have an auto-generated ConsumerProfile, clean it up first
+            if (consumerProfile) {
+                transactionOps.push(prisma_1.default.walletTransaction.deleteMany({
+                    where: { walletId: { in: consumerProfile.wallets.map(w => w.id) } }
+                }), prisma_1.default.wallet.deleteMany({ where: { consumerId: consumerProfile.id } }), prisma_1.default.gasTopup.deleteMany({
+                    where: {
+                        OR: [
+                            { consumerId: consumerProfile.id },
+                            { meterId: { in: consumerProfile.gasMeters.map(m => m.id) } }
+                        ]
+                    }
+                }), prisma_1.default.gasReward.deleteMany({ where: { consumerId: consumerProfile.id } }), prisma_1.default.gasMeter.deleteMany({ where: { consumerId: consumerProfile.id } }), prisma_1.default.customerOrder.deleteMany({ where: { consumerId: consumerProfile.id } }), prisma_1.default.loan.deleteMany({ where: { consumerId: consumerProfile.id } }), prisma_1.default.nfcCard.updateMany({
+                    where: { consumerId: consumerProfile.id },
+                    data: { consumerId: null, status: 'inactive' }
+                }), prisma_1.default.saleItem.deleteMany({
+                    where: { sale: { consumerId: consumerProfile.id } }
+                }), prisma_1.default.gasReward.updateMany({
+                    where: { sale: { consumerId: consumerProfile.id } },
+                    data: { saleId: null }
+                }), prisma_1.default.sale.deleteMany({ where: { consumerId: consumerProfile.id } }), prisma_1.default.consumerSettings.deleteMany({ where: { consumerId: consumerProfile.id } }), prisma_1.default.consumerProfile.delete({ where: { id: consumerProfile.id } }));
+            }
+            // Clean up Retailer related records safely before deleting the RetailerProfile
+            transactionOps.push(prisma_1.default.orderItem.deleteMany({ where: { order: { retailerId: Number(id) } } }), prisma_1.default.profitInvoice.deleteMany({ where: { order: { retailerId: Number(id) } } }), prisma_1.default.order.deleteMany({ where: { retailerId: Number(id) } }), prisma_1.default.gasReward.deleteMany({ where: { sale: { retailerId: Number(id) } } }), prisma_1.default.saleItem.deleteMany({ where: { sale: { retailerId: Number(id) } } }), prisma_1.default.sale.deleteMany({ where: { retailerId: Number(id) } }), prisma_1.default.product.deleteMany({ where: { retailerId: Number(id) } }), prisma_1.default.terminal.deleteMany({ where: { branch: { retailerId: Number(id) } } }), prisma_1.default.branch.deleteMany({ where: { retailerId: Number(id) } }), prisma_1.default.creditRequest.deleteMany({ where: { retailerId: Number(id) } }), prisma_1.default.retailerCredit.deleteMany({ where: { retailerId: Number(id) } }), prisma_1.default.settlementInvoice.deleteMany({ where: { retailerId: Number(id) } }), prisma_1.default.customProfitInvoice.deleteMany({ where: { retailerId: Number(id) } }), prisma_1.default.walletTransaction.deleteMany({ where: { retailerId: Number(id) } }), prisma_1.default.linkRequest.deleteMany({ where: { retailerId: Number(id) } }), prisma_1.default.customerLinkRequest.deleteMany({ where: { retailerId: Number(id) } }), prisma_1.default.retailerLoan.deleteMany({ where: { retailerId: Number(id) } }), prisma_1.default.nfcCard.updateMany({ where: { retailerId: Number(id) }, data: { retailerId: null } }), prisma_1.default.consumerProfile.updateMany({ where: { linkedRetailerId: Number(id) }, data: { linkedRetailerId: null } }), prisma_1.default.retailerProfile.delete({ where: { id: Number(id) } }));
+            // Delete Messages and Notifications
+            transactionOps.push(prisma_1.default.message.deleteMany({
+                where: { OR: [{ senderId: retailer.userId }, { receiverId: retailer.userId }] }
+            }), prisma_1.default.notification.deleteMany({ where: { userId: retailer.userId } }));
+            // Finally delete the User account
+            transactionOps.push(prisma_1.default.user.delete({ where: { id: retailer.userId } }));
+            // Execute all ops safely in a single transaction
+            yield prisma_1.default.$transaction(transactionOps);
         }
         res.json({ success: true, message: 'Retailer deleted' });
     }
@@ -1413,10 +1493,42 @@ const deleteWholesaler = (req, res) => __awaiter(void 0, void 0, void 0, functio
         const { id } = req.params;
         const wholesaler = yield prisma_1.default.wholesalerProfile.findUnique({ where: { id: Number(id) } });
         if (wholesaler) {
-            // Delete profile first to satisfy FK
-            yield prisma_1.default.wholesalerProfile.delete({ where: { id: Number(id) } });
-            // Then delete user
-            yield prisma_1.default.user.delete({ where: { id: wholesaler.userId } });
+            const consumerProfile = yield prisma_1.default.consumerProfile.findFirst({
+                where: { userId: wholesaler.userId },
+                include: { wallets: true, gasMeters: { select: { id: true } } }
+            });
+            const transactionOps = [];
+            // If they have an auto-generated ConsumerProfile, clean it up first
+            if (consumerProfile) {
+                transactionOps.push(prisma_1.default.walletTransaction.deleteMany({
+                    where: { walletId: { in: consumerProfile.wallets.map(w => w.id) } }
+                }), prisma_1.default.wallet.deleteMany({ where: { consumerId: consumerProfile.id } }), prisma_1.default.gasTopup.deleteMany({
+                    where: {
+                        OR: [
+                            { consumerId: consumerProfile.id },
+                            { meterId: { in: consumerProfile.gasMeters.map(m => m.id) } }
+                        ]
+                    }
+                }), prisma_1.default.gasReward.deleteMany({ where: { consumerId: consumerProfile.id } }), prisma_1.default.gasMeter.deleteMany({ where: { consumerId: consumerProfile.id } }), prisma_1.default.customerOrder.deleteMany({ where: { consumerId: consumerProfile.id } }), prisma_1.default.loan.deleteMany({ where: { consumerId: consumerProfile.id } }), prisma_1.default.nfcCard.updateMany({
+                    where: { consumerId: consumerProfile.id },
+                    data: { consumerId: null, status: 'inactive' }
+                }), prisma_1.default.saleItem.deleteMany({
+                    where: { sale: { consumerId: consumerProfile.id } }
+                }), prisma_1.default.gasReward.updateMany({
+                    where: { sale: { consumerId: consumerProfile.id } },
+                    data: { saleId: null }
+                }), prisma_1.default.sale.deleteMany({ where: { consumerId: consumerProfile.id } }), prisma_1.default.consumerSettings.deleteMany({ where: { consumerId: consumerProfile.id } }), prisma_1.default.consumerProfile.delete({ where: { id: consumerProfile.id } }));
+            }
+            // Clean up Wholesaler related records safely before deleting the WholesalerProfile
+            transactionOps.push(prisma_1.default.orderItem.deleteMany({ where: { order: { wholesalerId: Number(id) } } }), prisma_1.default.profitInvoice.deleteMany({ where: { order: { wholesalerId: Number(id) } } }), prisma_1.default.order.deleteMany({ where: { wholesalerId: Number(id) } }), prisma_1.default.settlementInvoice.deleteMany({ where: { wholesalerId: Number(id) } }), prisma_1.default.customProfitInvoice.deleteMany({ where: { wholesalerId: Number(id) } }), prisma_1.default.supplierPayment.deleteMany({ where: { wholesalerId: Number(id) } }), prisma_1.default.product.deleteMany({ where: { wholesalerId: Number(id) } }), prisma_1.default.supplier.deleteMany({ where: { wholesalerId: Number(id) } }), prisma_1.default.linkRequest.deleteMany({ where: { wholesalerId: Number(id) } }), prisma_1.default.retailerProfile.updateMany({ where: { linkedWholesalerId: Number(id) }, data: { linkedWholesalerId: null } }), prisma_1.default.wholesalerProfile.delete({ where: { id: Number(id) } }));
+            // Delete Messages and Notifications
+            transactionOps.push(prisma_1.default.message.deleteMany({
+                where: { OR: [{ senderId: wholesaler.userId }, { receiverId: wholesaler.userId }] }
+            }), prisma_1.default.notification.deleteMany({ where: { userId: wholesaler.userId } }));
+            // Finally delete the User account
+            transactionOps.push(prisma_1.default.user.delete({ where: { id: wholesaler.userId } }));
+            // Execute all ops safely in a single transaction
+            yield prisma_1.default.$transaction(transactionOps);
         }
         res.json({ success: true, message: 'Wholesaler deleted' });
     }
@@ -1573,9 +1685,18 @@ const updateCustomer = (req, res) => __awaiter(void 0, void 0, void 0, function*
                 isActive: status === 'active'
             }
         });
+        let gasRewardWalletIdUpdate = undefined;
+        if (phone) {
+            const duplicate = yield prisma_1.default.consumerProfile.findFirst({
+                where: { gasRewardWalletId: phone, userId: { not: profile.userId } }
+            });
+            if (!duplicate) {
+                gasRewardWalletIdUpdate = phone;
+            }
+        }
         yield prisma_1.default.consumerProfile.update({
             where: { id: Number(id) },
-            data: { fullName: `${firstName} ${lastName}` }
+            data: Object.assign({ fullName: `${firstName} ${lastName}` }, (gasRewardWalletIdUpdate && { gasRewardWalletId: gasRewardWalletIdUpdate }))
         });
         res.json({ success: true, message: 'Customer updated' });
     }
@@ -1673,17 +1794,17 @@ const updateCustomerStatus = (req, res) => __awaiter(void 0, void 0, void 0, fun
 });
 exports.updateCustomerStatus = updateCustomerStatus;
 const deleteCustomer = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
     try {
         const { id } = req.params;
         const profile = yield prisma_1.default.consumerProfile.findUnique({
             where: { id: Number(id) },
-            include: { wallets: true }
+            include: { wallets: true, gasMeters: { select: { id: true } }, user: { select: { role: true } } }
         });
         if (!profile) {
             return res.status(404).json({ success: false, message: 'Customer profile not found' });
         }
-        // Manual Cascade Deletion
-        yield prisma_1.default.$transaction([
+        const transactionOps = [
             // 1. Delete Wallet Transactions
             prisma_1.default.walletTransaction.deleteMany({
                 where: { walletId: { in: profile.wallets.map(w => w.id) } }
@@ -1691,7 +1812,14 @@ const deleteCustomer = (req, res) => __awaiter(void 0, void 0, void 0, function*
             // 2. Delete Wallets
             prisma_1.default.wallet.deleteMany({ where: { consumerId: Number(id) } }),
             // 3. Delete Gas Topups and Rewards
-            prisma_1.default.gasTopup.deleteMany({ where: { consumerId: Number(id) } }),
+            prisma_1.default.gasTopup.deleteMany({
+                where: {
+                    OR: [
+                        { consumerId: Number(id) },
+                        { meterId: { in: profile.gasMeters.map(m => m.id) } }
+                    ]
+                }
+            }),
             prisma_1.default.gasReward.deleteMany({ where: { consumerId: Number(id) } }),
             // 4. Delete Gas Meters
             prisma_1.default.gasMeter.deleteMany({ where: { consumerId: Number(id) } }),
@@ -1702,26 +1830,39 @@ const deleteCustomer = (req, res) => __awaiter(void 0, void 0, void 0, function*
             // 7. Unlink or delete NFC cards (unlinking is safer if cards are reusable)
             prisma_1.default.nfcCard.updateMany({
                 where: { consumerId: Number(id) },
-                data: { consumerId: null, status: 'inactive' }
+                data: {
+                    consumerId: null,
+                    status: 'inactive',
+                    cardholderName: null,
+                    email: null,
+                    phone: null
+                }
             }),
             // 7.5 Delete Sale Items
             prisma_1.default.saleItem.deleteMany({
                 where: { sale: { consumerId: Number(id) } }
             }),
+            // 7.6 Remove saleId from GasRewards linked to this consumer's sales to prevent FK errors
+            prisma_1.default.gasReward.updateMany({
+                where: { sale: { consumerId: Number(id) } },
+                data: { saleId: null }
+            }),
             // 8. Delete Sales (if they belong to this consumer)
             prisma_1.default.sale.deleteMany({ where: { consumerId: Number(id) } }),
             // 9. Delete Settings
             prisma_1.default.consumerSettings.deleteMany({ where: { consumerId: Number(id) } }),
-            // 10. Delete Messages and Notifications
-            prisma_1.default.message.deleteMany({
-                where: { OR: [{ senderId: profile.userId }, { receiverId: profile.userId }] }
-            }),
-            prisma_1.default.notification.deleteMany({ where: { userId: profile.userId } }),
             // 11. Delete the profile itself
-            prisma_1.default.consumerProfile.delete({ where: { id: Number(id) } }),
+            prisma_1.default.consumerProfile.delete({ where: { id: Number(id) } })
+        ];
+        if (((_a = profile.user) === null || _a === void 0 ? void 0 : _a.role) === 'consumer') {
+            // 10. Delete Messages and Notifications
+            transactionOps.push(prisma_1.default.message.deleteMany({
+                where: { OR: [{ senderId: profile.userId }, { receiverId: profile.userId }] }
+            }), prisma_1.default.notification.deleteMany({ where: { userId: profile.userId } }), 
             // 12. Finally delete the User record
-            prisma_1.default.user.delete({ where: { id: profile.userId } })
-        ]);
+            prisma_1.default.user.delete({ where: { id: profile.userId } }));
+        }
+        yield prisma_1.default.$transaction(transactionOps);
         res.json({ success: true, message: 'Customer and all associated data deleted successfully' });
     }
     catch (error) {
@@ -1882,20 +2023,25 @@ const deleteProduct = (req, res) => __awaiter(void 0, void 0, void 0, function* 
             return res.status(404).json({ error: 'Product not found' });
         }
         const whereClause = targetProduct.sku ? { sku: targetProduct.sku } : { name: targetProduct.name };
-        try {
-            // Attempt hard delete (works if the product has never been ordered or sold)
-            yield prisma_1.default.product.deleteMany({ where: whereClause });
-            res.json({ success: true, message: 'Products permanently deleted successfully' });
+        const productsToDelete = yield prisma_1.default.product.findMany({ where: whereClause });
+        let deletedCount = 0;
+        let softDeletedCount = 0;
+        for (const p of productsToDelete) {
+            try {
+                yield prisma_1.default.product.delete({ where: { id: p.id } });
+                deletedCount++;
+            }
+            catch (dbError) {
+                // If there are foreign key constraint references (e.g. P2003 error), fall back to soft delete
+                console.warn(`Hard delete failed for product ${p.id}. Falling back to soft delete.`);
+                yield prisma_1.default.product.update({
+                    where: { id: p.id },
+                    data: { status: 'deleted' }
+                });
+                softDeletedCount++;
+            }
         }
-        catch (dbError) {
-            // If there are foreign key constraint references (e.g. P2003 error), fall back to soft delete
-            console.warn('Hard delete failed due to active constraints. Falling back to soft delete.', dbError.message);
-            yield prisma_1.default.product.updateMany({
-                where: whereClause,
-                data: { status: 'deleted' }
-            });
-            res.json({ success: true, message: 'Products soft-deleted successfully' });
-        }
+        res.json({ success: true, message: `Products processed: ${deletedCount} permanently deleted, ${softDeletedCount} soft-deleted due to active constraints.` });
     }
     catch (error) {
         console.error('Delete Product Error:', error);
@@ -2057,12 +2203,41 @@ const deleteEmployee = (req, res) => __awaiter(void 0, void 0, void 0, function*
         if (!profile) {
             return res.status(404).json({ error: 'Employee not found' });
         }
-        // Delete User (Cascade will handle profile deletion if configured, but let's be explicit or rely on schema)
-        // In our updated schema we added onDelete: Cascade to the relation.
-        // So deleting the User deletes the Profile.
-        yield prisma_1.default.user.delete({
-            where: { id: profile.userId }
+        // Check for ConsumerProfile and cascade delete if exists
+        const consumerProfile = yield prisma_1.default.consumerProfile.findFirst({
+            where: { userId: profile.userId },
+            include: { wallets: true, gasMeters: { select: { id: true } } }
         });
+        const transactionOps = [];
+        if (consumerProfile) {
+            transactionOps.push(prisma_1.default.walletTransaction.deleteMany({
+                where: { walletId: { in: consumerProfile.wallets.map(w => w.id) } }
+            }), prisma_1.default.wallet.deleteMany({ where: { consumerId: consumerProfile.id } }), prisma_1.default.gasTopup.deleteMany({
+                where: {
+                    OR: [
+                        { consumerId: consumerProfile.id },
+                        { meterId: { in: consumerProfile.gasMeters.map(m => m.id) } }
+                    ]
+                }
+            }), prisma_1.default.gasReward.deleteMany({ where: { consumerId: consumerProfile.id } }), prisma_1.default.gasMeter.deleteMany({ where: { consumerId: consumerProfile.id } }), prisma_1.default.customerOrder.deleteMany({ where: { consumerId: consumerProfile.id } }), prisma_1.default.loan.deleteMany({ where: { consumerId: consumerProfile.id } }), prisma_1.default.nfcCard.updateMany({
+                where: { consumerId: consumerProfile.id },
+                data: { consumerId: null, status: 'inactive' }
+            }), prisma_1.default.saleItem.deleteMany({
+                where: { sale: { consumerId: consumerProfile.id } }
+            }), prisma_1.default.gasReward.updateMany({
+                where: { sale: { consumerId: consumerProfile.id } },
+                data: { saleId: null }
+            }), prisma_1.default.sale.deleteMany({ where: { consumerId: consumerProfile.id } }), prisma_1.default.consumerSettings.deleteMany({ where: { consumerId: consumerProfile.id } }), prisma_1.default.consumerProfile.delete({ where: { id: consumerProfile.id } }));
+        }
+        // Delete EmployeeProfile explicitly (just to be safe)
+        transactionOps.push(prisma_1.default.employeeProfile.delete({ where: { id: Number(id) } }));
+        // Delete Messages and Notifications
+        transactionOps.push(prisma_1.default.message.deleteMany({
+            where: { OR: [{ senderId: profile.userId }, { receiverId: profile.userId }] }
+        }), prisma_1.default.notification.deleteMany({ where: { userId: profile.userId } }));
+        // Finally delete the User
+        transactionOps.push(prisma_1.default.user.delete({ where: { id: profile.userId } }));
+        yield prisma_1.default.$transaction(transactionOps);
         res.json({ success: true, message: 'Employee deleted successfully' });
     }
     catch (error) {
@@ -2303,6 +2478,7 @@ const registerNFCCard = (req, res) => __awaiter(void 0, void 0, void 0, function
 });
 exports.registerNFCCard = registerNFCCard;
 const adminLinkCard = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b;
     try {
         const { id } = req.params;
         const { userId } = req.body;
@@ -2315,20 +2491,34 @@ const adminLinkCard = (req, res) => __awaiter(void 0, void 0, void 0, function* 
             return res.status(400).json({ success: false, error: 'Card is already linked to a customer' });
         // Try to find the consumer profile either by userId or consumerProfile id
         let consumerId = null;
-        const profileByUserId = yield prisma_1.default.consumerProfile.findUnique({ where: { userId: Number(userId) } });
+        let cardholderName = null;
+        const profileByUserId = yield prisma_1.default.consumerProfile.findUnique({
+            where: { userId: Number(userId) },
+            include: { user: true }
+        });
         if (profileByUserId) {
             consumerId = profileByUserId.id;
+            cardholderName = profileByUserId.fullName || ((_a = profileByUserId.user) === null || _a === void 0 ? void 0 : _a.name) || null;
         }
         else {
-            const profileById = yield prisma_1.default.consumerProfile.findUnique({ where: { id: Number(userId) } });
-            if (profileById)
+            const profileById = yield prisma_1.default.consumerProfile.findUnique({
+                where: { id: Number(userId) },
+                include: { user: true }
+            });
+            if (profileById) {
                 consumerId = profileById.id;
+                cardholderName = profileById.fullName || ((_b = profileById.user) === null || _b === void 0 ? void 0 : _b.name) || null;
+            }
         }
         if (!consumerId)
             return res.status(404).json({ success: false, error: 'Customer profile not found' });
         yield prisma_1.default.nfcCard.update({
             where: { id: Number(id) },
-            data: { consumerId: consumerId, status: 'active' }
+            data: {
+                consumerId: consumerId,
+                status: 'active',
+                cardholderName: cardholderName
+            }
         });
         res.json({ success: true, message: 'Card linked successfully' });
     }
@@ -2448,9 +2638,16 @@ exports.blockNFCCard = blockNFCCard;
 const activateNFCCard = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
+        // First find the card to see if it's assigned to a customer
+        const currentCard = yield prisma_1.default.nfcCard.findUnique({ where: { id: Number(id) } });
+        if (!currentCard)
+            return res.status(404).json({ success: false, error: 'Card not found' });
+        // If assigned to a customer, activating it should make it 'active'. 
+        // If not assigned, it stays 'available' in inventory.
+        const newStatus = currentCard.consumerId ? 'active' : 'available';
         const card = yield prisma_1.default.nfcCard.update({
             where: { id: Number(id) },
-            data: { status: 'available' }
+            data: { status: newStatus }
         });
         res.json({ success: true, card });
     }
@@ -2909,14 +3106,14 @@ const getCustomerAccountDetails = (req, res) => __awaiter(void 0, void 0, void 0
         const lastOrder = consolidatedOrders.length > 0 ? consolidatedOrders[0] : null;
         // Supplier chain - find linked retailers from sales
         const linkedRetailers = Array.from(new Set(formattedSales.map(s => { var _a; return (_a = s.retailerProfile) === null || _a === void 0 ? void 0 : _a.id; }).filter(Boolean)));
-        const supplierChain = yield prisma_1.default.retailerProfile.findMany({
+        const supplierChain = linkedRetailers.length > 0 ? yield prisma_1.default.retailerProfile.findMany({
             where: { id: { in: linkedRetailers } },
             include: {
                 linkedWholesaler: {
                     select: { id: true, companyName: true }
                 }
             }
-        });
+        }) : [];
         res.json({
             success: true,
             accountDetails: {
@@ -4125,13 +4322,7 @@ const saveEmailTemplate = (req, res) => __awaiter(void 0, void 0, void 0, functi
     try {
         const { name, subject, content, description, isActive, portal, triggerName, channel } = req.body;
         const SUPPORTED_VARIABLES = [
-            'Customer_name', 'customer_name', 'name', 'retail_name', 'wholesaler_name',
-            'meter_name', 'meter_id', 'amount', 'volume', 'token', 'transaction_id',
-            'tempPass', 'role', 'email', 'productName', 'currentStock', 'threshold',
-            'type', 'balance', 'txRef', 'orderNumber', 'quantity', 'totalAmount',
-            'temp_password', 'attempt_time', 'date', 'month', 'salesCount', 'revenue',
-            'newRetailers', 'newWholesalers', 'lowStockCount', 'offlineMeters', 'period',
-            'action', 'reason', 'reward_amount', 'new_reward_balance', 'new_balance'
+            'retail_name', 'retail_id', 'phone', 'email', 'created_date', 'login_url', 'order_id', 'product', 'quantity', 'wholesaler_name', 'order_date', 'estimated_delivery', 'invoice_no', 'amount', 'delivery_date', 'payment_method', 'balance', 'receipt_url', 'Customer_name', 'customer_name', 'name', 'customer_phone', 'request_date', 'dashboard_url', 'approval_date', 'new_balance', 'transaction_id', 'topup_date', 'month', 'total_sales', 'gross_profit', 'rent', 'tax', 'salary', 'other_deductions', 'net_profit', 'transfer_amount', 'transfer_date', 'report_url', 'request_id', 'credit_amount', 'reason', 'approved_amount', 'interest_rate', 'repayment_period', 'due_date', 'repayment_url', 'paid_amount', 'remaining_balance', 'payment_date', 'date', 'transactions', 'stock_remaining', 'top_product', 'change_time', 'device', 'ip_address', 'remaining_quantity', 'minimum_required', 'restock_url', 'activity', 'time', 'location', 'security_url', 'current_balance', 'minimum_balance', 'topup_url', 'attempt_time', 'ip', 'pending_duration', 'status', 'wholesaler_id', 'retail_phone', 'current_credit_balance', 'supplier_order_id', 'supplier_name', 'expected_delivery', 'supplier_phone', 'supplier_email', 'reference_id', 'request_type', 'customer_id', 'meter_name', 'meter_id', 'volume', 'token', 'temp_password', 'reward_amount', 'new_reward_balance', 'message', 'balance_type', 'action', 'productName', 'currentStock', 'threshold', 'type', 'txRef', 'orderNumber', 'totalAmount', 'salesCount', 'revenue', 'newRetailers', 'newWholesalers', 'lowStockCount', 'offlineMeters', 'period', 'tempPass', 'role', 'frontendUrl'
         ];
         // Validate variables in both subject and content
         const textToValidate = `${subject || ''} ${content || ''}`;
@@ -4741,7 +4932,7 @@ const getProfitInvoiceStats = (req, res) => __awaiter(void 0, void 0, void 0, fu
             res.json({
                 success: true,
                 data: {
-                    totalOrders: sales.length,
+                    totalOrders: sales.filter(s => s.saleItems && s.saleItems.length > 0).length,
                     totalRevenue,
                     grossProfit: totalRevenue - totalCost,
                     gasRewardsGiven,

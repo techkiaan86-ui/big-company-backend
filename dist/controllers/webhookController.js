@@ -255,43 +255,62 @@ const handlePalmKashWebhook = (req, res) => __awaiter(void 0, void 0, void 0, fu
                         }
                     });
                     // Auto-Register meter if it does not exist but exists in GPRS mappings
-                    if (!meter) {
+                    // Or Auto-Heal it if it exists but is missing the IMEI
+                    if (!meter || (meter && !meter.imei)) {
                         try {
-                            const existsGlobally = yield prisma_1.default.gasMeter.findFirst({
-                                where: {
-                                    OR: [
-                                        { meterNumber: txRecord.meterNumber },
-                                        { meterNumber: `MTR-${txRecord.meterNumber}` },
-                                        { meterNumber: txRecord.meterNumber.replace(/^MTR-/i, '') }
-                                    ]
-                                }
-                            });
-                            if (existsGlobally) {
+                            let existsGlobally = null;
+                            if (!meter) {
+                                existsGlobally = yield prisma_1.default.gasMeter.findFirst({
+                                    where: {
+                                        OR: [
+                                            { meterNumber: txRecord.meterNumber },
+                                            { meterNumber: `MTR-${txRecord.meterNumber}` },
+                                            { meterNumber: txRecord.meterNumber.replace(/^MTR-/i, '') }
+                                        ]
+                                    }
+                                });
+                            }
+                            if (!meter && existsGlobally) {
                                 console.log(`[Webhook GasRecharge] Meter ${txRecord.meterNumber} already registered globally (ID: ${existsGlobally.id}). Routing to existing meter.`);
                                 meter = existsGlobally;
                             }
-                            else {
+                            // If it's still missing its IMEI, check the mapping file
+                            if (!meter || (meter && !meter.imei)) {
                                 const { gprsMapping } = yield Promise.resolve().then(() => __importStar(require('../config/gprsMapping')));
                                 const matchedMapping = gprsMapping.find(m => m.meterNo === txRecord.meterNumber || m.meterNo === txRecord.meterNumber.replace(/^MTR-/i, ''));
-                                if (matchedMapping && txRecord.customerId) {
-                                    console.log(`[Webhook GasRecharge] Auto-registering matched GPRS meter ${txRecord.meterNumber} for consumer ${txRecord.customerId}...`);
-                                    meter = yield prisma_1.default.gasMeter.create({
-                                        data: {
-                                            consumerId: txRecord.customerId,
-                                            meterNumber: matchedMapping.meterNo,
-                                            imei: matchedMapping.imei,
-                                            serialNo: matchedMapping.serialNo,
-                                            meterKey: matchedMapping.meterKey,
-                                            isGprs: true,
-                                            meterType: 'PIPING',
-                                            status: 'active'
-                                        }
-                                    });
+                                if (matchedMapping) {
+                                    if (!meter && txRecord.customerId) {
+                                        console.log(`[Webhook GasRecharge] Auto-registering matched GPRS meter ${txRecord.meterNumber} for consumer ${txRecord.customerId}...`);
+                                        meter = yield prisma_1.default.gasMeter.create({
+                                            data: {
+                                                consumerId: txRecord.customerId,
+                                                meterNumber: matchedMapping.meterNo,
+                                                imei: matchedMapping.imei,
+                                                serialNo: matchedMapping.serialNo,
+                                                meterKey: matchedMapping.meterKey,
+                                                isGprs: true,
+                                                meterType: 'PIPING',
+                                                status: 'active'
+                                            }
+                                        });
+                                    }
+                                    else if (meter && !meter.imei) {
+                                        console.log(`[Webhook GasRecharge] Auto-healing missing IMEI for meter ${txRecord.meterNumber}`);
+                                        meter = yield prisma_1.default.gasMeter.update({
+                                            where: { id: meter.id },
+                                            data: {
+                                                imei: matchedMapping.imei,
+                                                serialNo: matchedMapping.serialNo,
+                                                meterKey: matchedMapping.meterKey,
+                                                isGprs: true
+                                            }
+                                        });
+                                    }
                                 }
                             }
                         }
                         catch (lookupErr) {
-                            console.error('[Webhook GasRecharge] Error during meter lookup/registration:', lookupErr.message);
+                            console.error('[Webhook GasRecharge] Error during meter lookup/registration/healing:', lookupErr.message);
                         }
                     }
                     let pushResult = { success: true, error: null };

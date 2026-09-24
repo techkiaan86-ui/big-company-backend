@@ -580,15 +580,11 @@ const updatePassword = (req, res) => __awaiter(void 0, void 0, void 0, function*
 exports.updatePassword = updatePassword;
 const updatePin = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const { old_pin, new_pin } = req.body;
+        const { new_pin } = req.body;
         const userId = req.user.id;
         const user = yield prisma_1.default.user.findUnique({ where: { id: userId } });
-        if (!user || !user.pin) {
+        if (!user) {
             return res.status(404).json({ error: 'User not found' });
-        }
-        const isValid = yield (0, auth_1.comparePassword)(old_pin, user.pin);
-        if (!isValid) {
-            return res.status(400).json({ error: 'Incorrect current PIN' });
         }
         const hashedPin = yield (0, auth_1.hashPassword)(new_pin);
         yield prisma_1.default.user.update({

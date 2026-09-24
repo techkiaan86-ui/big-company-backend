@@ -193,10 +193,10 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
       take: 5
     });
 
-    const topProductIds = topSellingItems.map(item => item.productId);
-    const topProductsDetails = await prisma.product.findMany({
+    const topProductIds = topSellingItems.map(item => item.productId).filter(id => id !== undefined && id !== null);
+    const topProductsDetails = topProductIds.length > 0 ? await prisma.product.findMany({
       where: { id: { in: topProductIds } }
-    });
+    }) : [];
 
     const topProducts = topSellingItems.map(item => {
       const product = topProductsDetails.find(p => p.id === item.productId);
@@ -968,10 +968,10 @@ export const createSale = async (req: AuthRequest, res: Response) => {
     }
 
     // 1. Validate items and stock
-    const productIds = items.map((item: any) => Number(item.product_id));
-    const products = await prisma.product.findMany({
+    const productIds = items.map((item: any) => Number(item.product_id)).filter((id: number) => !isNaN(id));
+    const products = productIds.length > 0 ? await prisma.product.findMany({
       where: { id: { in: productIds } }
-    });
+    }) : [];
     const productMap = new Map(products.map(p => [p.id, p]));
 
     for (const item of items) {
@@ -1239,11 +1239,11 @@ export const createSale = async (req: AuthRequest, res: Response) => {
     // --- Post-Transaction Event Triggers ---
     try {
       // 1. Notify Retailer of Low Stock for any items in the sale (RET-EMAIL-013)
-      const soldProductIds = items.map((i: any) => Number(i.product_id));
-      const soldProducts = await prisma.product.findMany({
+      const soldProductIds = items.map((i: any) => Number(i.product_id)).filter((id: number) => !isNaN(id));
+      const soldProducts = soldProductIds.length > 0 ? await prisma.product.findMany({
         where: { id: { in: soldProductIds } },
         include: { retailerProfile: { include: { user: true } } }
-      });
+      }) : [];
 
       for (const product of soldProducts) {
         const threshold = product.lowStockThreshold || 10;

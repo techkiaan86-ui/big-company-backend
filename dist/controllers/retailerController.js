@@ -86,10 +86,10 @@ const getDashboardStats = (req, res) => __awaiter(void 0, void 0, void 0, functi
                 include: { saleItems: true }
             }),
             prisma_1.default.sale.findMany({
-                where: Object.assign({ retailerId: retailerProfile.id, saleItems: { some: {} } }, (dateFilter ? { createdAt: dateFilter } : {}))
+                where: Object.assign({ retailerId: retailerProfile.id, status: { not: 'cancelled' }, saleItems: { some: {} } }, (dateFilter ? { createdAt: dateFilter } : {}))
             }),
             prisma_1.default.product.findMany({
-                where: { retailerId: retailerProfile.id, wholesalerId: null }
+                where: { retailerId: retailerProfile.id, wholesalerId: null, status: { not: 'deleted' } }
             }),
             // Pending Orders (to wholesalers)
             prisma_1.default.order.findMany({
@@ -200,10 +200,10 @@ const getDashboardStats = (req, res) => __awaiter(void 0, void 0, void 0, functi
             },
             take: 5
         });
-        const topProductIds = topSellingItems.map(item => item.productId);
-        const topProductsDetails = yield prisma_1.default.product.findMany({
+        const topProductIds = topSellingItems.map(item => item.productId).filter(id => id !== undefined && id !== null);
+        const topProductsDetails = topProductIds.length > 0 ? yield prisma_1.default.product.findMany({
             where: { id: { in: topProductIds } }
-        });
+        }) : [];
         const topProducts = topSellingItems.map(item => {
             const product = topProductsDetails.find(p => p.id === item.productId);
             return {
@@ -290,7 +290,7 @@ const getInventory = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         }
         // 1. Get Retailer's own inventory (and global items)
         const myProducts = yield prisma_1.default.product.findMany({
-            where: { retailerId: retailerProfile.id, wholesalerId: null },
+            where: { retailerId: retailerProfile.id, wholesalerId: null, status: { not: 'deleted' } },
             orderBy: { name: 'asc' }
         });
         const config = yield prisma_1.default.systemConfig.findFirst();
@@ -895,10 +895,10 @@ const createSale = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
             rewardConsumerId = rewardConsumer.id;
         }
         // 1. Validate items and stock
-        const productIds = items.map((item) => Number(item.product_id));
-        const products = yield prisma_1.default.product.findMany({
+        const productIds = items.map((item) => Number(item.product_id)).filter((id) => !isNaN(id));
+        const products = productIds.length > 0 ? yield prisma_1.default.product.findMany({
             where: { id: { in: productIds } }
-        });
+        }) : [];
         const productMap = new Map(products.map(p => [p.id, p]));
         for (const item of items) {
             const product = productMap.get(Number(item.product_id));
@@ -1059,7 +1059,7 @@ const createSale = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
                 }
             }
             // Log Transaction if linked to consumer
-            if (consumerId && (['wallet', 'dashboard_wallet', 'credit_wallet', 'nfc'].includes(payment_method))) {
+            if (consumerId && (['wallet', 'dashboard_wallet', 'credit_wallet'].includes(payment_method))) {
                 const { wallet_type } = payment_details || {};
                 const walletType = (payment_method === 'credit_wallet' || wallet_type === 'credit') ? 'credit_wallet' : 'dashboard_wallet';
                 const wallet = yield prisma.wallet.findFirst({
@@ -1137,11 +1137,11 @@ const createSale = (req, res) => __awaiter(void 0, void 0, void 0, function* () 
         // --- Post-Transaction Event Triggers ---
         try {
             // 1. Notify Retailer of Low Stock for any items in the sale (RET-EMAIL-013)
-            const soldProductIds = items.map((i) => Number(i.product_id));
-            const soldProducts = yield prisma_1.default.product.findMany({
+            const soldProductIds = items.map((i) => Number(i.product_id)).filter((id) => !isNaN(id));
+            const soldProducts = soldProductIds.length > 0 ? yield prisma_1.default.product.findMany({
                 where: { id: { in: soldProductIds } },
                 include: { retailerProfile: { include: { user: true } } }
-            });
+            }) : [];
             for (const product of soldProducts) {
                 const threshold = product.lowStockThreshold || 10;
                 if (product.stock <= 0 && ((_c = (_b = product.retailerProfile) === null || _b === void 0 ? void 0 : _b.user) === null || _c === void 0 ? void 0 : _c.email)) {
@@ -1568,6 +1568,13 @@ const createOrder = (req, res) => __awaiter(void 0, void 0, void 0, function* ()
                 requiresLinking: true
             });
         }
+        if (retailerProfile.isBlockedByWholesaler) {
+            return res.status(403).json({
+                success: false,
+                error: `Your account has been blocked by your wholesaler. Reason: ${retailerProfile.blockedReason || 'No reason provided'}. You cannot place orders.`,
+                isBlocked: true
+            });
+        }
         const { items, totalAmount, paymentMethod = 'wallet', phone } = req.body;
         if (!items || items.length === 0) {
             return res.status(400).json({ error: 'Order must contain items' });
@@ -1972,6 +1979,12 @@ const requestCredit = (req, res) => __awaiter(void 0, void 0, void 0, function* 
         });
         if (!retailerProfile) {
             return res.status(404).json({ error: 'Retailer profile not found' });
+        }
+        if (retailerProfile.isBlockedByWholesaler) {
+            return res.status(403).json({
+                success: false,
+                error: 'Your account has been blocked by your wholesaler. You cannot request credit.'
+            });
         }
         const { amount, reason } = req.body;
         const parsedAmount = parseFloat(amount);
@@ -2395,6 +2408,18 @@ const updateProfile = (req, res) => __awaiter(void 0, void 0, void 0, function* 
                 where: { id: userId },
                 data: Object.assign(Object.assign(Object.assign({}, (name && { name })), (email && { email })), (phone && { phone }))
             });
+            // Sync gasRewardWalletId if phone changed
+            if (phone) {
+                const duplicate = yield prisma_1.default.consumerProfile.findFirst({
+                    where: { gasRewardWalletId: phone, userId: { not: userId } }
+                });
+                if (!duplicate) {
+                    yield prisma_1.default.consumerProfile.updateMany({
+                        where: { userId: userId },
+                        data: { gasRewardWalletId: phone }
+                    });
+                }
+            }
         }
         // Update RetailerProfile model
         const updatedRetailer = yield prisma_1.default.retailerProfile.update({
@@ -2772,8 +2797,8 @@ const sendLinkRequest = (req, res) => __awaiter(void 0, void 0, void 0, function
                     error: 'Your request was already approved. Contact admin if not linked.'
                 });
             }
-            // If rejected, allow to send again - update the existing request
-            if (existingRequest.status === 'rejected') {
+            // If rejected or unlinked, allow to send again - update the existing request
+            if (existingRequest.status === 'rejected' || existingRequest.status === 'unlinked') {
                 const updatedRequest = yield prisma_1.default.linkRequest.update({
                     where: { id: existingRequest.id },
                     data: {
@@ -2786,7 +2811,7 @@ const sendLinkRequest = (req, res) => __awaiter(void 0, void 0, void 0, function
                 });
                 return res.json({
                     success: true,
-                    message: 'Link request re-sent successfully',
+                    message: 'Link request sent successfully',
                     request: updatedRequest
                 });
             }
@@ -3643,6 +3668,7 @@ const getPaymentAuditLogs = (req, res) => __awaiter(void 0, void 0, void 0, func
             return {
                 id: sale.id.toString(),
                 cardId: sale.meterId || (card === null || card === void 0 ? void 0 : card.uid) || 'N/A', // Use meterId as fallback for card UID if we start storing it there
+                cardNumber: (card === null || card === void 0 ? void 0 : card.cardNumber) || (card === null || card === void 0 ? void 0 : card.uid) || 'N/A',
                 orderId: sale.id,
                 customerName: ((_b = sale.consumerProfile) === null || _b === void 0 ? void 0 : _b.fullName) || ((_d = (_c = sale.consumerProfile) === null || _c === void 0 ? void 0 : _c.user) === null || _d === void 0 ? void 0 : _d.name) || (((_e = sale.consumerProfile) === null || _e === void 0 ? void 0 : _e.membershipType) === 'catering' ? 'Catering' : 'Walk-in Customer'),
                 amount: sale.totalAmount,

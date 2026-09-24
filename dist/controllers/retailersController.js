@@ -45,7 +45,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getWholesaleHistory = exports.blockRetailer = exports.updateRetailerCreditLimit = exports.rejectCreditRequest = exports.approveCreditRequest = exports.getCreditRequestsWithStats = exports.getSuppliers = exports.getSupplierOrders = exports.getRetailerOrdersById = exports.getRetailerById = exports.getRetailerStats = exports.getRetailers = void 0;
+exports.getWholesaleHistory = exports.unblockRetailer = exports.blockRetailer = exports.updateRetailerCreditLimit = exports.rejectCreditRequest = exports.approveCreditRequest = exports.getCreditRequestsWithStats = exports.getSuppliers = exports.getSupplierOrders = exports.getRetailerOrdersById = exports.getRetailerById = exports.getRetailerStats = exports.getRetailers = void 0;
 const prisma_1 = __importDefault(require("../utils/prisma"));
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
@@ -114,7 +114,7 @@ const getRetailers = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         // Format retailers from LinkRequest
         const retailersFromRequests = yield Promise.all(approvedRequests.map((req) => __awaiter(void 0, void 0, void 0, function* () {
             var _a;
-            return (Object.assign(Object.assign({}, req.retailer), { status: ((_a = req.retailer.user) === null || _a === void 0 ? void 0 : _a.isActive) ? 'active' : 'blocked', totalOrders: req.retailer.orders.length, totalRevenue: req.retailer.orders.reduce((sum, o) => sum + o.totalAmount, 0), creditPaid: yield prisma_1.default.walletTransaction.aggregate({
+            return (Object.assign(Object.assign({}, req.retailer), { status: req.retailer.isBlockedByWholesaler ? 'blocked' : (((_a = req.retailer.user) === null || _a === void 0 ? void 0 : _a.isActive) ? 'active' : 'inactive'), totalOrders: req.retailer.orders.length, totalRevenue: req.retailer.orders.reduce((sum, o) => sum + o.totalAmount, 0), creditPaid: yield prisma_1.default.walletTransaction.aggregate({
                     where: {
                         retailerId: req.retailer.id,
                         type: 'credit_repayment',
@@ -128,7 +128,7 @@ const getRetailers = (req, res) => __awaiter(void 0, void 0, void 0, function* (
             .filter(r => !retailerIdsFromRequests.has(r.id))
             .map((r) => __awaiter(void 0, void 0, void 0, function* () {
             var _a;
-            return (Object.assign(Object.assign({}, r), { status: ((_a = r.user) === null || _a === void 0 ? void 0 : _a.isActive) ? 'active' : 'blocked', totalOrders: r.orders.length, totalRevenue: r.orders.reduce((sum, o) => sum + o.totalAmount, 0), creditPaid: yield prisma_1.default.walletTransaction.aggregate({
+            return (Object.assign(Object.assign({}, r), { status: r.isBlockedByWholesaler ? 'blocked' : (((_a = r.user) === null || _a === void 0 ? void 0 : _a.isActive) ? 'active' : 'inactive'), totalOrders: r.orders.length, totalRevenue: r.orders.reduce((sum, o) => sum + o.totalAmount, 0), creditPaid: yield prisma_1.default.walletTransaction.aggregate({
                     where: {
                         retailerId: r.id,
                         type: 'credit_repayment',
@@ -687,11 +687,73 @@ const updateRetailerCreditLimit = (req, res) => __awaiter(void 0, void 0, void 0
     }
 });
 exports.updateRetailerCreditLimit = updateRetailerCreditLimit;
-// Block/Unblock retailer
+// Block a retailer
 const blockRetailer = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    res.json({ success: true, message: 'Status updated successfully' });
+    try {
+        const { id } = req.params;
+        const { reason } = req.body;
+        const parsedRetailerId = parseInt(id);
+        const wholesalerProfile = yield prisma_1.default.wholesalerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!wholesalerProfile) {
+            return res.status(404).json({ error: 'Wholesaler profile not found' });
+        }
+        const retailer = yield prisma_1.default.retailerProfile.findUnique({
+            where: { id: parsedRetailerId }
+        });
+        if (!retailer || retailer.linkedWholesalerId !== wholesalerProfile.id) {
+            return res.status(403).json({ error: 'You are not authorized to block this retailer' });
+        }
+        yield prisma_1.default.retailerProfile.update({
+            where: { id: parsedRetailerId },
+            data: {
+                isBlockedByWholesaler: true,
+                blockedReason: reason || 'Blocked by wholesaler',
+                blockedAt: new Date()
+            }
+        });
+        res.json({ success: true, message: 'Retailer blocked successfully' });
+    }
+    catch (error) {
+        console.error('Error blocking retailer:', error);
+        res.status(500).json({ error: error.message });
+    }
 });
 exports.blockRetailer = blockRetailer;
+// Unblock a retailer
+const unblockRetailer = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { id } = req.params;
+        const parsedRetailerId = parseInt(id);
+        const wholesalerProfile = yield prisma_1.default.wholesalerProfile.findUnique({
+            where: { userId: req.user.id }
+        });
+        if (!wholesalerProfile) {
+            return res.status(404).json({ error: 'Wholesaler profile not found' });
+        }
+        const retailer = yield prisma_1.default.retailerProfile.findUnique({
+            where: { id: parsedRetailerId }
+        });
+        if (!retailer || retailer.linkedWholesalerId !== wholesalerProfile.id) {
+            return res.status(403).json({ error: 'You are not authorized to unblock this retailer' });
+        }
+        yield prisma_1.default.retailerProfile.update({
+            where: { id: parsedRetailerId },
+            data: {
+                isBlockedByWholesaler: false,
+                blockedReason: null,
+                blockedAt: null
+            }
+        });
+        res.json({ success: true, message: 'Retailer unblocked successfully' });
+    }
+    catch (error) {
+        console.error('Error unblocking retailer:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+exports.unblockRetailer = unblockRetailer;
 // ============================================
 // UNIFIED WALLET HISTORY
 // ============================================

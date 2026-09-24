@@ -244,8 +244,13 @@ const checkCardBalance = (req, res) => __awaiter(void 0, void 0, void 0, functio
         if (!card_uid) {
             return res.status(400).json({ success: false, error: 'Card UID is required' });
         }
-        const card = yield prisma_1.default.nfcCard.findUnique({
-            where: { uid: card_uid },
+        const card = yield prisma_1.default.nfcCard.findFirst({
+            where: {
+                OR: [
+                    { uid: card_uid },
+                    { cardNumber: card_uid }
+                ]
+            },
             include: { consumerProfile: true }
         });
         if (!card) {

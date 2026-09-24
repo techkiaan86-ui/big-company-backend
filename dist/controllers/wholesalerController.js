@@ -92,7 +92,7 @@ const getDashboardStats = (req, res) => __awaiter(void 0, void 0, void 0, functi
             }),
             // All products for inventory value
             prisma_1.default.product.findMany({
-                where: { wholesalerId: wholesalerProfile.id }
+                where: { wholesalerId: wholesalerProfile.id, status: { not: 'deleted' } }
             }),
             // Pending credit requests
             prisma_1.default.creditRequest.findMany({
@@ -241,7 +241,8 @@ const getInventory = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         // Build where clause
         const where = {
             wholesalerId: wholesalerProfile.id,
-            retailerId: null // Never show retailer-owned products in wholesaler inventory
+            retailerId: null, // Never show retailer-owned products in wholesaler inventory
+            status: { not: 'deleted' }
         };
         if (category) {
             where.category = category;
@@ -299,7 +300,8 @@ const getInventoryStats = (req, res) => __awaiter(void 0, void 0, void 0, functi
         const zeroPriceProducts = yield prisma_1.default.product.findMany({
             where: {
                 wholesalerId: wholesalerProfile.id,
-                price: 0
+                price: 0,
+                status: { not: 'deleted' }
             }
         });
         if (zeroPriceProducts.length > 0) {
@@ -318,7 +320,10 @@ const getInventoryStats = (req, res) => __awaiter(void 0, void 0, void 0, functi
             }
         }
         const products = yield prisma_1.default.product.findMany({
-            where: { wholesalerId: wholesalerProfile.id }
+            where: {
+                wholesalerId: wholesalerProfile.id,
+                status: { not: 'deleted' }
+            }
         });
         // Calculate statistics
         const totalProducts = products.length;
@@ -744,10 +749,20 @@ const deleteProduct = (req, res) => __awaiter(void 0, void 0, void 0, function* 
         if (!wholesalerProfile) {
             return res.status(404).json({ error: 'Wholesaler profile not found' });
         }
-        yield prisma_1.default.product.delete({
-            where: { id: Number(id), wholesalerId: wholesalerProfile.id }
-        });
-        res.json({ success: true, message: 'Product deleted successfully' });
+        try {
+            yield prisma_1.default.product.delete({
+                where: { id: Number(id), wholesalerId: wholesalerProfile.id }
+            });
+            res.json({ success: true, message: 'Product permanently deleted successfully' });
+        }
+        catch (dbError) {
+            console.warn(`Hard delete failed for product ${id}. Falling back to soft delete.`);
+            yield prisma_1.default.product.update({
+                where: { id: Number(id), wholesalerId: wholesalerProfile.id },
+                data: { status: 'deleted' }
+            });
+            res.json({ success: true, message: 'Product soft-deleted successfully due to active constraints' });
+        }
     }
     catch (error) {
         console.error('❌ Error deleting product:', error);
@@ -1530,14 +1545,25 @@ const approveLinkRequest = (req, res) => __awaiter(void 0, void 0, void 0, funct
         // NEW: Retailer can be linked to MULTIPLE wholesalers
         // No need to check if already linked elsewhere - just approve this request
         // The LinkRequest table tracks per-wholesaler approval status
-        // Update request status to approved
-        yield prisma_1.default.linkRequest.update({
-            where: { id: request.id },
-            data: {
-                status: 'approved',
-                respondedAt: new Date()
-            }
-        });
+        // Update request status to approved AND link the retailer
+        yield prisma_1.default.$transaction([
+            prisma_1.default.linkRequest.update({
+                where: { id: request.id },
+                data: {
+                    status: 'approved',
+                    respondedAt: new Date()
+                }
+            }),
+            prisma_1.default.retailerProfile.update({
+                where: { id: request.retailerId },
+                data: {
+                    linkedWholesalerId: wholesalerProfile.id,
+                    isBlockedByWholesaler: false, // Ensure they start unblocked
+                    blockedReason: null,
+                    blockedAt: null
+                }
+            })
+        ]);
         // Trigger Email Notification (RET-EMAIL-005)
         const { emailQueue } = yield Promise.resolve().then(() => __importStar(require('../queues/email.queue')));
         if ((_a = request.retailer.user) === null || _a === void 0 ? void 0 : _a.email) {
@@ -1702,44 +1728,52 @@ const getLinkedRetailers = (req, res) => __awaiter(void 0, void 0, void 0, funct
 });
 exports.getLinkedRetailers = getLinkedRetailers;
 // Unlink a retailer
-// NEW: Uses LinkRequest table - updates status to 'rejected' or deletes the request
 const unlinkRetailer = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { retailerId } = req.params;
+        const parsedRetailerId = parseInt(retailerId);
         const wholesalerProfile = yield prisma_1.default.wholesalerProfile.findUnique({
-            where: { userId: req.user.id },
-            include: { user: true }
+            where: { userId: req.user.id }
         });
         if (!wholesalerProfile) {
             return res.status(404).json({ success: false, error: 'Wholesaler profile not found' });
         }
-        // Find the approved link request for this retailer-wholesaler pair
-        const linkRequest = yield prisma_1.default.linkRequest.findUnique({
-            where: {
-                retailerId_wholesalerId: {
-                    retailerId: parseInt(retailerId),
-                    wholesalerId: wholesalerProfile.id
-                }
-            },
-            include: { retailer: true }
+        const retailerProfile = yield prisma_1.default.retailerProfile.findUnique({
+            where: { id: parsedRetailerId }
         });
-        if (!linkRequest) {
-            return res.status(404).json({ success: false, error: 'Link request not found' });
+        if (!retailerProfile) {
+            return res.status(404).json({ success: false, error: 'Retailer not found' });
         }
-        if (linkRequest.status !== 'approved') {
+        if (retailerProfile.linkedWholesalerId !== wholesalerProfile.id) {
             return res.status(400).json({ success: false, error: 'Retailer is not currently linked to you' });
         }
-        // Update link request status to 'unlinked' (or delete it)
-        yield prisma_1.default.linkRequest.update({
-            where: { id: linkRequest.id },
-            data: {
-                status: 'unlinked',
-                respondedAt: new Date()
-            }
-        });
+        yield prisma_1.default.$transaction([
+            // 1. Break the relationship and reset block status
+            prisma_1.default.retailerProfile.update({
+                where: { id: parsedRetailerId },
+                data: {
+                    linkedWholesalerId: null,
+                    isBlockedByWholesaler: false,
+                    blockedReason: null,
+                    blockedAt: null
+                }
+            }),
+            // 2. Safely update any existing link requests without crashing if they don't exist
+            prisma_1.default.linkRequest.updateMany({
+                where: {
+                    retailerId: parsedRetailerId,
+                    wholesalerId: wholesalerProfile.id,
+                    status: 'approved'
+                },
+                data: {
+                    status: 'unlinked',
+                    respondedAt: new Date()
+                }
+            })
+        ]);
         res.json({
             success: true,
-            message: `${linkRequest.retailer.shopName} has been unlinked`
+            message: `${retailerProfile.shopName} has been unlinked`
         });
     }
     catch (error) {

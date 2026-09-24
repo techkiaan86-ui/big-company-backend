@@ -311,23 +311,38 @@ const initiateGasMeterRecharge = (req, res) => __awaiter(void 0, void 0, void 0,
             }
         });
         // Auto-Register meter if it does not exist but exists in GPRS mappings
-        if (!meter) {
+        // Or Auto-Heal it if it exists but is missing the IMEI
+        if (!meter || (meter && !meter.imei)) {
             const { gprsMapping } = yield Promise.resolve().then(() => __importStar(require('../config/gprsMapping')));
             const matchedMapping = gprsMapping.find(m => m.meterNo === meterNumber || m.meterNo === meterNumber.replace(/^MTR-/i, ''));
-            if (matchedMapping && consumerProfileId) {
-                console.log(`[GasRecharge] Auto-registering matched GPRS meter ${meterNumber} for consumer ${consumerProfileId}...`);
-                meter = yield prisma_1.default.gasMeter.create({
-                    data: {
-                        consumerId: consumerProfileId,
-                        meterNumber: matchedMapping.meterNo,
-                        imei: matchedMapping.imei,
-                        serialNo: matchedMapping.serialNo,
-                        meterKey: matchedMapping.meterKey,
-                        isGprs: true,
-                        meterType: 'PIPING',
-                        status: 'active'
-                    }
-                });
+            if (matchedMapping) {
+                if (!meter && consumerProfileId) {
+                    console.log(`[GasRecharge] Auto-registering matched GPRS meter ${meterNumber} for consumer ${consumerProfileId}...`);
+                    meter = yield prisma_1.default.gasMeter.create({
+                        data: {
+                            consumerId: consumerProfileId,
+                            meterNumber: matchedMapping.meterNo,
+                            imei: matchedMapping.imei,
+                            serialNo: matchedMapping.serialNo,
+                            meterKey: matchedMapping.meterKey,
+                            isGprs: true,
+                            meterType: 'PIPING',
+                            status: 'active'
+                        }
+                    });
+                }
+                else if (meter && !meter.imei) {
+                    console.log(`[GasRecharge] Auto-healing missing IMEI for meter ${meterNumber}`);
+                    meter = yield prisma_1.default.gasMeter.update({
+                        where: { id: meter.id },
+                        data: {
+                            imei: matchedMapping.imei,
+                            serialNo: matchedMapping.serialNo,
+                            meterKey: matchedMapping.meterKey,
+                            isGprs: true
+                        }
+                    });
+                }
             }
         }
     }

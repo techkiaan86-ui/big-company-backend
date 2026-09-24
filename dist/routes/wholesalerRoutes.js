@@ -44,7 +44,8 @@ router.get('/retailers/stats', retailersController_1.getRetailerStats);
 router.get('/retailers/:id', retailersController_1.getRetailerById);
 router.get('/retailers/:id/orders', retailersController_1.getRetailerOrdersById);
 router.put('/retailers/:id/credit-limit', retailersController_1.updateRetailerCreditLimit);
-router.put('/retailers/:id/status', retailersController_1.blockRetailer);
+router.post('/retailers/:id/block', retailersController_1.blockRetailer);
+router.post('/retailers/:id/unblock', retailersController_1.unblockRetailer);
 // Suppliers
 router.get('/supplier-orders', retailersController_1.getSupplierOrders);
 router.get('/suppliers', retailersController_1.getSuppliers);

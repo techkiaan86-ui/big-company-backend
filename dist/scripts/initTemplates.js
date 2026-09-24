@@ -44,6 +44,7 @@ const RETAILER_TEMPLATES = [
         name: 'RET-EMAIL-002',
         subject: 'Order Accepted - {{order_id}}',
         description: 'Order Accepted by Wholesaler',
+        triggerName: 'Order accepted by wholesaler',
         content: `
       <p>Hello {{retail_name}},</p>
       <p>Your order has been accepted successfully by the wholesaler.</p>
@@ -67,6 +68,7 @@ const RETAILER_TEMPLATES = [
         name: 'RET-EMAIL-003',
         subject: 'Order Delivered Successfully - {{order_id}}',
         description: 'Order Delivered with Receipt Information',
+        triggerName: 'Retailer order delivered',
         content: `
       <p>Hello {{retail_name}},</p>
       <p>Your order has been delivered successfully.</p>
@@ -94,6 +96,7 @@ const RETAILER_TEMPLATES = [
         name: 'RET-EMAIL-004',
         subject: 'New Customer Link Request',
         description: 'Customer Link Request Notification',
+        triggerName: 'Customer link request received',
         content: `
       <p>Hello {{retail_name}},</p>
       <p>A new customer has requested to be linked to your retail account.</p>
@@ -115,6 +118,7 @@ const RETAILER_TEMPLATES = [
         name: 'RET-EMAIL-005',
         subject: 'Customer Link Request Approved',
         description: 'Customer Link Approval Confirmation',
+        triggerName: 'Customer link request approved',
         content: `
       <p>Hello {{retail_name}},</p>
       <p>The customer link request has been approved successfully.</p>
@@ -134,6 +138,7 @@ const RETAILER_TEMPLATES = [
         name: 'RET-EMAIL-006',
         subject: 'Capital Wallet Top-Up Successful',
         description: 'Capital Wallet Top-Up Confirmation',
+        triggerName: 'Retailer capital wallet top-up',
         content: `
       <p>Hello {{retail_name}},</p>
       <p>Your capital wallet has been topped up successfully.</p>
@@ -154,6 +159,7 @@ const RETAILER_TEMPLATES = [
         name: 'RET-EMAIL-007',
         subject: 'Monthly Profit Transfer Report - {{month}}',
         description: 'Monthly Profit Transfer Confirmation',
+        triggerName: 'Retailer monthly profit transfer',
         content: `
       <p>Hello {{retail_name}},</p>
       <p>Your monthly financial summary and profit transfer have been completed successfully.</p>
@@ -188,6 +194,7 @@ const RETAILER_TEMPLATES = [
         name: 'RET-EMAIL-008',
         subject: 'Credit Request Submitted Successfully',
         description: 'Credit Request Submitted',
+        triggerName: 'Retailer credit request submitted',
         content: `
       <p>Hello {{retail_name}},</p>
       <p>Your credit request has been submitted successfully.</p>
@@ -209,6 +216,7 @@ const RETAILER_TEMPLATES = [
         name: 'RET-EMAIL-009',
         subject: 'Credit Request Approved',
         description: 'Credit Approval Confirmation',
+        triggerName: 'Retailer credit request approved',
         content: `
       <p>Hello {{retail_name}},</p>
       <p>Your credit request has been approved successfully.</p>
@@ -232,6 +240,7 @@ const RETAILER_TEMPLATES = [
         name: 'RET-EMAIL-010',
         subject: 'Credit Payment Confirmation',
         description: 'Paid Credit Confirmation',
+        triggerName: 'Retailer credit payment received',
         content: `
       <p>Hello {{retail_name}},</p>
       <p>Your credit payment has been received successfully.</p>
@@ -253,6 +262,7 @@ const RETAILER_TEMPLATES = [
         name: 'RET-EMAIL-011',
         subject: 'Daily Sales and Stock Report - {{date}}',
         description: 'Daily Sales Report & Stock Update',
+        triggerName: 'Retailer daily sales report',
         content: `
       <p>Hello {{retail_name}},</p>
       <p>Below is your daily business summary report.</p>
@@ -279,6 +289,7 @@ const RETAILER_TEMPLATES = [
         name: 'RET-EMAIL-012',
         subject: 'Security Update Confirmation',
         description: 'PIN or Password Change Confirmation',
+        triggerName: 'Retailer PIN or password changed',
         content: `
       <p>Hello {{retail_name}},</p>
       <p>Your account security credentials were updated successfully.</p>
@@ -299,6 +310,7 @@ const RETAILER_TEMPLATES = [
         name: 'RET-EMAIL-013',
         subject: 'Low Stock Alert',
         description: 'Low Stock Alert',
+        triggerName: 'Retailer low stock alert',
         content: `
       <p>Hello {{retail_name}},</p>
       <p>Your stock level is running low.</p>
@@ -320,6 +332,7 @@ const RETAILER_TEMPLATES = [
         name: 'RET-EMAIL-014',
         subject: 'Out of Stock Alert',
         description: 'Out of Stock Alert',
+        triggerName: 'Retailer out of stock alert',
         content: `
       <p>Hello {{retail_name}},</p>
       <p>The following product is currently out of stock:</p>
@@ -338,6 +351,7 @@ const RETAILER_TEMPLATES = [
         name: 'RET-EMAIL-015',
         subject: 'Suspicious Activity Detected',
         description: 'Suspicious Shopping Activity Alert',
+        triggerName: 'Retailer suspicious activity detected',
         content: `
       <p>Hello {{retail_name}},</p>
       <p>We detected unusual activity on your retail account.</p>
@@ -360,6 +374,7 @@ const RETAILER_TEMPLATES = [
         name: 'RET-EMAIL-016',
         subject: 'Low Capital Wallet Balance Alert',
         description: 'Low Capital Wallet Alert',
+        triggerName: 'Retailer low capital wallet balance',
         content: `
       <p>Hello {{retail_name}},</p>
       <p>Your capital wallet balance is currently below the recommended operational threshold.</p>
@@ -380,6 +395,7 @@ const RETAILER_TEMPLATES = [
         name: 'RET-EMAIL-017',
         subject: 'Failed Login Attempt Detected',
         description: 'Failed Login Attempt Alert',
+        triggerName: 'Retailer failed login attempt',
         content: `
       <p>Hello {{retail_name}},</p>
       <p>A failed login attempt was detected on your account.</p>
@@ -400,6 +416,7 @@ const RETAILER_TEMPLATES = [
         name: 'RET-EMAIL-018',
         subject: 'Order Failed - {{order_id}}',
         description: 'Failed Order Notification',
+        triggerName: 'Retailer order failed',
         content: `
       <p>Hello {{retail_name}},</p>
       <p>Your order could not be completed successfully.</p>
@@ -420,6 +437,7 @@ const RETAILER_TEMPLATES = [
         name: 'RET-EMAIL-019',
         subject: 'Pending Order Alert - {{order_id}}',
         description: 'Pending Order Alert (>20 Minutes)',
+        triggerName: 'Retailer order pending too long',
         content: `
       <p>Hello {{retail_name}},</p>
       <p>The following order has remained pending longer than expected.</p>
@@ -469,6 +487,7 @@ const WHOLESALER_TEMPLATES = [
         name: 'WHO-EMAIL-002',
         subject: 'Daily Sales and Stock Report - {{date}}',
         description: 'Daily Wholesaler Sales & Stock Summary',
+        triggerName: 'Wholesaler daily sales report',
         content: `
       <p>Hello {{wholesaler_name}},</p>
       <p>Below is your daily wholesaler business summary.</p>
@@ -495,6 +514,7 @@ const WHOLESALER_TEMPLATES = [
         name: 'WHO-EMAIL-003',
         subject: 'New Retailer Order Request - {{order_id}}',
         description: 'New Order Received from Retailer',
+        triggerName: 'New retailer order received',
         content: `
       <p>Hello {{wholesaler_name}},</p>
       <p>A retailer has submitted a new stock order request.</p>
@@ -519,6 +539,7 @@ const WHOLESALER_TEMPLATES = [
         name: 'WHO-EMAIL-004',
         subject: 'Retailer Order Delivered - {{order_id}}',
         description: 'Wholesaler Order Delivery Confirmation',
+        triggerName: 'Wholesaler order delivered to retailer',
         content: `
       <p>Hello {{wholesaler_name}},</p>
       <p>The retailer order has been marked as delivered successfully.</p>
@@ -545,6 +566,7 @@ const WHOLESALER_TEMPLATES = [
         name: 'WHO-EMAIL-005',
         subject: 'New Retailer Link Request',
         description: 'New Retailer Link Request Notification',
+        triggerName: 'New retailer link request received',
         content: `
       <p>Hello {{wholesaler_name}},</p>
       <p>A new retailer has requested to be linked to your wholesaler account.</p>
@@ -566,6 +588,7 @@ const WHOLESALER_TEMPLATES = [
         name: 'WHO-EMAIL-006',
         subject: 'Retailer Credit Request - {{request_id}}',
         description: 'New Credit Request from Retailer',
+        triggerName: 'Retailer credit request received by wholesaler',
         content: `
       <p>Hello {{wholesaler_name}},</p>
       <p>A retailer has submitted a credit request.</p>
@@ -589,6 +612,7 @@ const WHOLESALER_TEMPLATES = [
         name: 'WHO-EMAIL-007',
         subject: 'Retailer Credit Approved - {{request_id}}',
         description: 'Confirmation of Approved Retailer Credit',
+        triggerName: 'Wholesaler approved retailer credit',
         content: `
       <p>Hello {{wholesaler_name}},</p>
       <p>You approved a retailer credit request successfully.</p>
@@ -612,6 +636,7 @@ const WHOLESALER_TEMPLATES = [
         name: 'WHO-EMAIL-008',
         subject: 'Retailer Credit Payment Received - {{transaction_id}}',
         description: 'Payment Received for Retailer Credit',
+        triggerName: 'Retailer credit payment received by wholesaler',
         content: `
       <p>Hello {{wholesaler_name}},</p>
       <p>A retailer credit payment has been received successfully.</p>
@@ -633,6 +658,7 @@ const WHOLESALER_TEMPLATES = [
         name: 'WHO-EMAIL-009',
         subject: 'Supplier Order Confirmation - {{supplier_order_id}}',
         description: 'Wholesaler Supplier Order Recorded',
+        triggerName: 'Wholesaler supplier order recorded',
         content: `
       <p>Hello {{wholesaler_name}},</p>
       <p>Your supplier order has been recorded successfully.</p>
@@ -657,6 +683,7 @@ const WHOLESALER_TEMPLATES = [
         name: 'WHO-EMAIL-010',
         subject: 'New Supplier Added Successfully',
         description: 'Confirmation of New Supplier Addition',
+        triggerName: 'New supplier added',
         content: `
       <p>Hello {{wholesaler_name}},</p>
       <p>A new supplier has been added successfully to your account.</p>
@@ -677,6 +704,7 @@ const WHOLESALER_TEMPLATES = [
         name: 'WHO-EMAIL-011',
         subject: 'Monthly Profit Transfer Report - {{month}}',
         description: 'Monthly Wholesaler Profit Summary',
+        triggerName: 'Wholesaler monthly profit transfer',
         content: `
       <p>Hello {{wholesaler_name}},</p>
       <p>Your monthly financial summary and profit transfer have been completed successfully.</p>
@@ -709,6 +737,7 @@ const WHOLESALER_TEMPLATES = [
         name: 'WHO-EMAIL-012',
         subject: 'Security Update Confirmation',
         description: 'Wholesaler Security Credential Change',
+        triggerName: 'Wholesaler PIN or password changed',
         content: `
       <p>Hello {{wholesaler_name}},</p>
       <p>Your account security credentials were updated successfully.</p>
@@ -729,6 +758,7 @@ const WHOLESALER_TEMPLATES = [
         name: 'WHO-EMAIL-013',
         subject: 'Low Stock Alert',
         description: 'Wholesaler Low Stock Notification',
+        triggerName: 'Wholesaler low stock alert',
         content: `
       <p>Hello {{wholesaler_name}},</p>
       <p>Your wholesaler stock level is running low.</p>
@@ -750,6 +780,7 @@ const WHOLESALER_TEMPLATES = [
         name: 'WHO-EMAIL-014',
         subject: 'Out of Stock Alert',
         description: 'Wholesaler Out of Stock Alert',
+        triggerName: 'Wholesaler out of stock alert',
         content: `
       <p>Hello {{wholesaler_name}},</p>
       <p>The following product is currently out of stock:</p>
@@ -768,6 +799,7 @@ const WHOLESALER_TEMPLATES = [
         name: 'WHO-EMAIL-015',
         subject: 'Suspicious Inventory Activity Detected',
         description: 'Alert for Unusual Wholesaler Activity',
+        triggerName: 'Wholesaler suspicious activity detected',
         content: `
       <p>Hello {{wholesaler_name}},</p>
       <p>We detected unusual inventory activity on your wholesaler account.</p>
@@ -789,6 +821,7 @@ const WHOLESALER_TEMPLATES = [
         name: 'WHO-EMAIL-016',
         subject: 'Failed Login Attempt Detected',
         description: 'Wholesaler Failed Login Alert',
+        triggerName: 'Wholesaler failed login attempt',
         content: `
       <p>Hello {{wholesaler_name}},</p>
       <p>A failed login attempt was detected on your account.</p>
@@ -809,6 +842,7 @@ const WHOLESALER_TEMPLATES = [
         name: 'WHO-EMAIL-017',
         subject: 'Pending Action Alert - {{reference_id}}',
         description: 'Wholesaler Pending Request Warning',
+        triggerName: 'Wholesaler item pending too long',
         content: `
       <p>Hello {{wholesaler_name}},</p>
       <p>The following item has remained pending longer than expected.</p>
@@ -854,6 +888,7 @@ const CUSTOMER_EMAIL_TEMPLATES = [
         name: 'CUS-EMAIL-002',
         subject: 'Order Delivered - Receipt',
         description: 'Order delivery confirmation receipt',
+        triggerName: 'Customer order delivered',
         content: `
       <h2>Order Receipt Notification</h2>
       <p>Hello {{customer_name}},</p>
@@ -875,6 +910,7 @@ const CUSTOMER_EMAIL_TEMPLATES = [
         name: 'CUS-EMAIL-003',
         subject: 'Wallet Top-Up Successful',
         description: 'Confirmation email for customer wallet top-up',
+        triggerName: 'Customer wallet top-up successful',
         content: `
       <h2>Wallet Top-Up Successful</h2>
       <p>Hello {{customer_name}},</p>
@@ -895,6 +931,7 @@ const CUSTOMER_EMAIL_TEMPLATES = [
         name: 'CUS-EMAIL-004',
         subject: 'Gas Meter Recharge Receipt',
         description: 'Receipt email for successful gas meter recharge',
+        triggerName: 'Customer gas meter recharged',
         content: `
       <h2>Gas Meter Recharge Confirmation</h2>
       <p>Hello {{customer_name}},</p>
@@ -916,6 +953,7 @@ const CUSTOMER_EMAIL_TEMPLATES = [
         name: 'CUS-EMAIL-005',
         subject: 'Password Reset - Your Temporary Password',
         description: 'Customer password reset temporary credentials email',
+        triggerName: 'Customer password reset',
         content: `
       <h2>Password Reset Request</h2>
       <p>Hello {{customer_name}},</p>
@@ -935,6 +973,7 @@ const CUSTOMER_EMAIL_TEMPLATES = [
         name: 'CUS-EMAIL-006',
         subject: 'Gas Reward Balance Updated',
         description: 'Notification email when customer earns gas rewards',
+        triggerName: 'Customer gas reward balance updated',
         content: `
       <h2>You Earned Gas Rewards!</h2>
       <p>Hello {{customer_name}},</p>
@@ -954,6 +993,7 @@ const CUSTOMER_EMAIL_TEMPLATES = [
         name: 'CUS-EMAIL-007',
         subject: 'PIN or Password Security Alert',
         description: 'Security notification for PIN or password updates',
+        triggerName: 'Customer PIN or password changed',
         content: `
       <h2>Security Alert - Credentials Updated</h2>
       <p>Hello {{customer_name}},</p>
@@ -969,6 +1009,7 @@ const CUSTOMER_EMAIL_TEMPLATES = [
         name: 'CUS-EMAIL-008',
         subject: 'Security Alert - Failed Login Attempt',
         description: 'Security notification for failed login detection',
+        triggerName: 'Customer failed login attempt',
         content: `
       <h2>Failed Login Attempt Detected</h2>
       <p>Hello {{customer_name}},</p>
@@ -984,6 +1025,7 @@ const CUSTOMER_EMAIL_TEMPLATES = [
         name: 'CUS-EMAIL-009',
         subject: 'Refund Request Update',
         description: 'Confirmation email for customer refund request',
+        triggerName: 'Customer refund request update',
         content: `
       <h2>Refund Request Update</h2>
       <p>Hello {{customer_name}},</p>
@@ -1005,6 +1047,7 @@ const CUSTOMER_EMAIL_TEMPLATES = [
         name: 'CUS-EMAIL-010',
         subject: 'Account Status Update',
         description: 'Notification email when customer account status changes',
+        triggerName: 'Customer account status changed',
         content: `
       <h2>Account Status Notification</h2>
       <p>Hello {{customer_name}},</p>
@@ -1025,6 +1068,7 @@ const CUSTOMER_EMAIL_TEMPLATES = [
         name: 'CUS-EMAIL-011',
         subject: 'System Notification',
         description: 'General system announcement template for customers',
+        triggerName: 'Customer system notification',
         content: `
       <h2>System Update Notification</h2>
       <p>Hello {{customer_name}},</p>
@@ -1053,66 +1097,78 @@ const CUSTOMER_SMS_TEMPLATES = [
         name: 'CUS-SMS-002',
         subject: 'Order Delivery Confirmation',
         description: 'Triggered when customer order is marked delivered',
+        triggerName: 'Customer order delivered SMS',
         content: 'Hello {{customer_name}}, your order {{order_id}} has been delivered on {{delivery_date}}. Amount: {{amount}} RWF. Thank you. for support call: +250788541239.'
     },
     {
         name: 'CUS-SMS-003',
         subject: 'Wallet Top-Up Confirmation',
         description: 'Triggered when customer wallet top-up is successful',
+        triggerName: 'Customer wallet top-up SMS',
         content: 'Hello {{customer_name}}, wallet top-up successful. Amount: {{amount}} RWF. New balance: {{new_balance}} RWF. Ref: {{transaction_id}}. for support call: +250788541239.'
     },
     {
         name: 'CUS-SMS-004',
         subject: 'Gas Recharge Token Confirmation',
         description: 'Triggered when customer buys gas meter recharge/token',
+        triggerName: 'Customer gas meter recharged SMS',
         content: 'Hello {{customer_name}}, gas recharge for {{meter_name}} {{meter_id}} is successful. Amount: {{amount}} RWF. Gas: {{volume}}m³ Token: {{token}}. Ref: {{transaction_id}}. for support call: +250788541239.'
     },
     {
         name: 'CUS-SMS-005',
         subject: 'Paid Credit Confirmation',
         description: 'Triggered when customer pays credit/loan',
+        triggerName: 'Customer credit payment received SMS',
         content: 'Hello {{customer_name}}, credit payment received. Paid: {{paid_amount}} RWF. Remaining balance: {{remaining_balance}} RWF. Ref: {{transaction_id}}. for support call: +250788541239.'
     },
     {
         name: 'CUS-SMS-006',
         subject: 'Gas Rewards Received and Update Confirmation',
         description: 'Triggered when customer receives gas reward balance update',
+        triggerName: 'Customer gas reward updated SMS',
         content: 'Hello {{customer_name}}, you received {{reward_amount}} M3 gas reward. New reward balance: {{new_reward_balance}} M3. for support call: +250788541239.'
     },
     {
         name: 'CUS-SMS-007',
         subject: 'Change PIN or Password Confirmation',
         description: 'Triggered when customer changes PIN or password',
+        triggerName: 'Customer PIN or password changed SMS',
         content: 'Hello {{customer_name}}, your PIN/password was changed at {{change_time}}. If this was not you, contact support immediately. for support call: +250788541239.'
     },
     {
         name: 'CUS-SMS-008',
         subject: 'Rejected or Failed Order Alert',
         description: 'Triggered when customer order is rejected or fails',
+        triggerName: 'Customer order rejected SMS',
         content: 'Hello {{customer_name}}, your order {{order_id}} was not completed. Reason: {{reason}}. Please try again. for support call: +250788541239.'
     },
     {
         name: 'CUS-SMS-009',
         subject: 'Approved or Rejected Credit Request Alert',
         description: 'Triggered when customer credit request is approved or rejected',
+        triggerName: 'Customer credit request status SMS',
         content: 'Hello {{customer_name}}, your credit request {{request_id}} is {{status}}. Amount: {{amount}} RWF. Reason/Note: {{reason}}. for support call: +250788541239.'
     },
     {
         name: 'CUS-SMS-010',
         subject: 'Low Balance Alert',
         description: 'Triggered when customer wallet or meter balance drops below threshold',
+        triggerName: 'Customer low balance alert SMS',
         content: 'Hello {{customer_name}}, low {{balance_type}} balance alert. Current balance: {{current_balance}}. Please top up to avoid service interruption. for support call: +250788541239.'
     },
     {
         name: 'CUS-SMS-011',
         subject: 'Failed Login Attempt Alert',
         description: 'Triggered on failed login attempt detection',
+        triggerName: 'Customer failed login attempt SMS',
         content: 'Hello {{customer_name}}, failed login attempt detected at {{attempt_time}}. If this was not you, change your PIN/password. for support call: +250788541239.'
     },
     {
         name: 'CUS-SMS-012',
         subject: 'Activated or Deactivated Account Information',
         description: 'Triggered when customer account status changes',
+        triggerName: 'Customer account status changed SMS',
+        content: 'Hello {{customer_name}}, your account has been {{status}} on {{date}}. Reason/Note: {{reason}}. for support call: +250788541239.'
     }
 ];
 const SYSTEM_TEMPLATES = [
@@ -1120,6 +1176,7 @@ const SYSTEM_TEMPLATES = [
         name: 'SYS-EMAIL-001',
         subject: 'Account Action Alert - {{action}}',
         description: 'Triggered when retailer or wholesaler account status changes',
+        triggerName: 'Account status action alert',
         content: `
       <h2>Account Status Notification</h2>
       <p>Hello,</p>
@@ -1142,6 +1199,7 @@ const SYSTEM_TEMPLATES = [
         name: 'SYS-EMAIL-002',
         subject: 'Password Reset Request',
         description: 'Triggered on password reset request',
+        triggerName: 'System password reset request',
         content: `
       <h2>Password Reset Request</h2>
       <p>Hello,</p>
@@ -1161,6 +1219,7 @@ const SYSTEM_TEMPLATES = [
         name: 'SYS-SMS-002',
         subject: 'Password Reset SMS',
         description: 'Triggered on password reset request via SMS',
+        triggerName: 'System password reset SMS',
         content: 'Your temporary password is: {{temp_password}}. Please log in and change it immediately. Support: +250788541239.'
     }
 ];
@@ -1181,6 +1240,7 @@ function initTemplates() {
                         subject: templateData.subject || '',
                         content: templateData.content,
                         description: templateData.description,
+                        triggerName: templateData.triggerName || null,
                         channel: channel,
                         portal: portal,
                         isActive: true,

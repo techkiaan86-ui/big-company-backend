@@ -194,6 +194,18 @@ const updateCustomerProfile = (req, res) => __awaiter(void 0, void 0, void 0, fu
                 where: { id: userId },
                 data: Object.assign(Object.assign(Object.assign({}, (phone && { phone })), (email && { email })), (full_name && { name: full_name }))
             });
+            // Sync gasRewardWalletId if phone changed
+            if (phone) {
+                const duplicate = yield prisma_1.default.consumerProfile.findFirst({
+                    where: { gasRewardWalletId: phone, userId: { not: userId } }
+                });
+                if (!duplicate) {
+                    yield prisma_1.default.consumerProfile.updateMany({
+                        where: { userId },
+                        data: { gasRewardWalletId: phone }
+                    });
+                }
+            }
         }
         // Update consumer profile fields
         const updatedProfile = yield prisma_1.default.consumerProfile.update({
