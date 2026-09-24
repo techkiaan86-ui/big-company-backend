@@ -151,7 +151,10 @@ export const getAdminTaxes = async (req: any, res: Response) => {
     const wholesalerSettlementMap = new Map(allWholesalers.map(w => [w.id, w]));
 
     const sales = await prisma.sale.findMany({
-      where: { status: { in: ['completed', 'pending_payment', 'pending'] } },
+      where: { 
+        status: { in: ['completed', 'pending_payment', 'pending'] },
+        saleItems: { some: {} }
+      },
       include: { saleItems: { include: { product: true } }, consumerProfile: true },
       orderBy: { createdAt: 'desc' },
       take: 1000

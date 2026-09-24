@@ -1478,9 +1478,8 @@ export const deleteRetailer = async (req: AuthRequest, res: Response) => {
           prisma.gasMeter.deleteMany({ where: { consumerId: consumerProfile.id } }),
           prisma.customerOrder.deleteMany({ where: { consumerId: consumerProfile.id } }),
           prisma.loan.deleteMany({ where: { consumerId: consumerProfile.id } }),
-          prisma.nfcCard.updateMany({
-            where: { consumerId: consumerProfile.id },
-            data: { consumerId: null, status: 'inactive' }
+          prisma.nfcCard.deleteMany({
+            where: { consumerId: consumerProfile.id }
           }),
           prisma.saleItem.deleteMany({
             where: { sale: { consumerId: consumerProfile.id } }
@@ -1514,7 +1513,7 @@ export const deleteRetailer = async (req: AuthRequest, res: Response) => {
         prisma.linkRequest.deleteMany({ where: { retailerId: Number(id) } }),
         prisma.customerLinkRequest.deleteMany({ where: { retailerId: Number(id) } }),
         prisma.retailerLoan.deleteMany({ where: { retailerId: Number(id) } }),
-        prisma.nfcCard.updateMany({ where: { retailerId: Number(id) }, data: { retailerId: null } }),
+        prisma.nfcCard.deleteMany({ where: { retailerId: Number(id) } }),
         prisma.consumerProfile.updateMany({ where: { linkedRetailerId: Number(id) }, data: { linkedRetailerId: null } }),
         prisma.retailerProfile.delete({ where: { id: Number(id) } })
       );
@@ -1678,9 +1677,8 @@ export const deleteWholesaler = async (req: AuthRequest, res: Response) => {
           prisma.gasMeter.deleteMany({ where: { consumerId: consumerProfile.id } }),
           prisma.customerOrder.deleteMany({ where: { consumerId: consumerProfile.id } }),
           prisma.loan.deleteMany({ where: { consumerId: consumerProfile.id } }),
-          prisma.nfcCard.updateMany({
-            where: { consumerId: consumerProfile.id },
-            data: { consumerId: null, status: 'inactive' }
+          prisma.nfcCard.deleteMany({
+            where: { consumerId: consumerProfile.id }
           }),
           prisma.saleItem.deleteMany({
             where: { sale: { consumerId: consumerProfile.id } }
