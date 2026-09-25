@@ -63,7 +63,7 @@ export class TemplateService {
   /**
    * Fetches template from DB or returns default fallback.
    */
-  static async getTemplate(nameOrSlug: string, data: Record<string, any>): Promise<{ subject: string; html: string; isSMS?: boolean }> {
+  static async getTemplate(nameOrSlug: string, data: Record<string, any>): Promise<{ subject: string; html: string; isSMS?: boolean; abort?: boolean }> {
     const { default: globalPrisma } = await import('../utils/prisma');
     let templateName = nameOrSlug;
     
@@ -82,10 +82,15 @@ export class TemplateService {
       // 2. Fetch the actual template content
       // @ts-ignore
       const dbTemplate = await globalPrisma.emailTemplate.findUnique({
-        where: { name: templateName, isActive: true }
+        where: { name: templateName }
       });
 
       if (dbTemplate) {
+        if (!dbTemplate.isActive) {
+          console.log(`[TemplateService] Template '${templateName}' is INACTIVE. Aborting message.`);
+          return { subject: '', html: '', abort: true };
+        }
+
         const subject = this.render(dbTemplate.subject, data);
         const content = this.render(dbTemplate.content, data);
         const isSMS = dbTemplate.channel === 'SMS' || templateName.includes('SMS') || nameOrSlug.includes('SMS');

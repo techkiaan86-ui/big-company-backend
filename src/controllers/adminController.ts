@@ -1582,6 +1582,27 @@ export const verifyWholesaler = async (req: AuthRequest, res: Response) => {
   }
 };
 
+export const verifyCustomer = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Check if customer exists
+    const customer = await prisma.consumerProfile.findUnique({ where: { id: Number(id) } });
+    if (!customer) return res.status(404).json({ success: false, message: 'Customer not found' });
+
+    // Update isVerified status
+    await prisma.consumerProfile.update({
+      where: { id: Number(id) },
+      data: { isVerified: true }
+    });
+
+    res.json({ success: true, message: 'Customer verified successfully' });
+  } catch (error: any) {
+    console.error('Verify Customer Error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // ==========================================
 // WHOLESALER MANAGEMENT (Extra CRUD)
 // ==========================================
@@ -2038,16 +2059,9 @@ export const deleteCustomer = async (req: AuthRequest, res: Response) => {
       prisma.customerOrder.deleteMany({ where: { consumerId: Number(id) } }),
       // 6. Delete Loans
       prisma.loan.deleteMany({ where: { consumerId: Number(id) } }),
-      // 7. Unlink or delete NFC cards (unlinking is safer if cards are reusable)
-      prisma.nfcCard.updateMany({
-        where: { consumerId: Number(id) },
-        data: { 
-          consumerId: null, 
-          status: 'inactive',
-          cardholderName: null,
-          email: null,
-          phone: null
-        }
+      // 7. Delete NFC cards
+      prisma.nfcCard.deleteMany({
+        where: { consumerId: Number(id) }
       }),
       // 7.5 Delete Sale Items
       prisma.saleItem.deleteMany({
